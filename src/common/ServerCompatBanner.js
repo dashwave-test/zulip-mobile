@@ -5,48 +5,41 @@ import type { Node } from 'react';
 
 import ZulipBanner from './ZulipBanner';
 import { useSelector, useGlobalSelector, useDispatch } from '../react-redux';
+import { getOwnUser } from '../selectors';
 import { getIdentity, getServerVersion } from '../account/accountsSelectors';
 import { getSession, getGlobalSettings } from '../directSelectors';
 import { dismissCompatNotice } from '../session/sessionActions';
 import { openLinkWithUserPreference } from '../utils/openLink';
 import { ZulipVersion } from '../utils/zulipVersion';
-import { getOwnUserRole, roleIsAtLeast } from '../permissionSelectors';
+import { roleIsAtLeast } from '../permissionSelectors';
 import { Role } from '../api/permissionsTypes';
+
+/**
+ * The doc stating our oldest supported server version.
+ */
+// TODO: Instead, link to new Help Center doc once we have it:
+//   https://github.com/zulip/zulip/issues/23842
+export const kServerSupportDocUrl: URL = new URL(
+  'https://zulip.readthedocs.io/en/latest/overview/release-lifecycle.html#compatibility-and-upgrading',
+);
 
 /**
  * The oldest version we currently support.
  *
- * Should match what we say at:
- *   https://zulip.readthedocs.io/en/stable/overview/release-lifecycle.html#compatibility-and-upgrading
+ * Should match the policy stated at kServerSupportDocUrl: all versions
+ * below this should be older than 18 months.
  *
  * See also kMinAllowedServerVersion in apiErrors.js, for the version below
  * which we just refuse to connect.
  */
-// "2.2.0" is a funny way of saying "3.0", differing in that it accepts
-// versions like 2.2-dev-1234-g08192a3b4c.  Some servers running versions
-// from Git describe their versions that way: specifically those installed
-// from commits in the range 2.2-dev..3.0-dev (2019-12 to 2020-06), before
-// we decided to rename the then-upcoming release from 2.2 to 3.0; and
-// potentially upgraded since then, but not past the upgrader bugfix commit
-// 5.0~960 (2022-01).
-//
-// By the time we want to desupport 3.x circa 2022-11, it should make sense
-// to simply say 4.0 here.  By that point the affected versions from Git
-// will be nearly a year old, and it's pretty OK to just say those servers
-// should upgrade too.
-export const kMinSupportedVersion: ZulipVersion = new ZulipVersion('2.2.0');
-// Notes on known breakage at older versions:
-//  * Before 1.8, the server doesn't send found_newest / found_oldest on
-//    fetching messages, and so `state.caughtUp` will never have truthy
-//    values.  This probably means annoying behavior in a message list,
-//    as we keep trying to fetch newer messages.
+export const kMinSupportedVersion: ZulipVersion = new ZulipVersion('5.0');
 
 /**
  * The next value we'll give to kMinSupportedVersion in the future.
  *
  * This should be the next major Zulip Server version after kMinSupportedVersion.
  */
-export const kNextMinSupportedVersion: ZulipVersion = new ZulipVersion('4.0');
+export const kNextMinSupportedVersion: ZulipVersion = new ZulipVersion('6.0');
 
 type Props = $ReadOnly<{||}>;
 
@@ -60,7 +53,7 @@ export default function ServerCompatBanner(props: Props): Node {
   );
   const zulipVersion = useSelector(getServerVersion);
   const realm = useSelector(state => getIdentity(state).realm);
-  const isAtLeastAdmin = useSelector(state => roleIsAtLeast(getOwnUserRole(state), Role.Admin));
+  const isAtLeastAdmin = useSelector(state => roleIsAtLeast(getOwnUser(state).role, Role.Admin));
   const settings = useGlobalSelector(getGlobalSettings);
 
   let visible = false;
@@ -89,7 +82,7 @@ export default function ServerCompatBanner(props: Props): Node {
       buttons={[
         {
           id: 'dismiss',
-          label: 'Remind me later',
+          label: 'Dismiss',
           onPress: () => {
             dispatch(dismissCompatNotice());
           },
@@ -98,14 +91,7 @@ export default function ServerCompatBanner(props: Props): Node {
           id: 'learn-more',
           label: 'Learn more',
           onPress: () => {
-            openLinkWithUserPreference(
-              // TODO: Instead, link to new Help Center doc once we have it:
-              //   https://github.com/zulip/zulip/issues/23842
-              new URL(
-                'https://zulip.readthedocs.io/en/stable/overview/release-lifecycle.html#compatibility-and-upgrading',
-              ),
-              settings,
-            );
+            openLinkWithUserPreference(kServerSupportDocUrl, settings);
           },
         },
       ]}

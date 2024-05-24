@@ -1,5 +1,8 @@
 /* @flow strict-local */
-import type { Debug, Orientation, Action } from '../types';
+import type { GlobalState } from '../reduxTypes';
+import type { Orientation, Action } from '../types';
+import { keyOfIdentity } from '../account/accountMisc';
+import { getIdentity, tryGetActiveAccountState } from '../account/accountsSelectors';
 import {
   REHYDRATE,
   DEAD_QUEUE,
@@ -10,9 +13,10 @@ import {
   REGISTER_COMPLETE,
   APP_ORIENTATION,
   TOGGLE_OUTBOX_SENDING,
-  DEBUG_FLAG_TOGGLE,
   GOT_PUSH_TOKEN,
   DISMISS_SERVER_COMPAT_NOTICE,
+  REGISTER_PUSH_TOKEN_START,
+  REGISTER_PUSH_TOKEN_END,
 } from '../actionConstants';
 
 /**
@@ -43,8 +47,7 @@ export type PerAccountSessionState = $ReadOnly<{
   outboxSending: boolean,
 
   /**
-   * Whether `ServerCompatNotice` (which we'll add soon) has been
-   *   dismissed this session.
+   * Whether `ServerCompatBanner` has been dismissed this session.
    *
    * We put this in the per-session state deliberately, so that users
    * see the notice on every startup until the server is upgraded.
@@ -53,6 +56,11 @@ export type PerAccountSessionState = $ReadOnly<{
    * doesn't act on the notice.
    */
   hasDismissedServerCompatNotice: boolean,
+
+  /**
+   * How many `api.savePushToken` requests are in progress for this account.
+   */
+  registerPushTokenRequestsInProgress: number,
 
   ...
 }>;
@@ -92,8 +100,6 @@ export type GlobalSessionState = $ReadOnly<{
    */
   pushToken: string | null,
 
-  debug: Debug,
-
   ...
 }>;
 
@@ -123,7 +129,6 @@ const initialGlobalSessionState: $Exact<GlobalSessionState> = {
   isHydrated: false,
   orientation: 'PORTRAIT',
   pushToken: null,
-  debug: Object.freeze({}),
 };
 
 /** PRIVATE; exported only for tests. */
@@ -132,6 +137,7 @@ export const initialPerAccountSessionState: $Exact<PerAccountSessionState> = {
   loading: false,
   outboxSending: false,
   hasDismissedServerCompatNotice: false,
+  registerPushTokenRequestsInProgress: 0,
 };
 
 const initialState: SessionState = {
@@ -139,8 +145,11 @@ const initialState: SessionState = {
   ...initialPerAccountSessionState,
 };
 
-// eslint-disable-next-line default-param-last
-export default (state: SessionState = initialState, action: Action): SessionState => {
+export default (
+  state: SessionState = initialState, // eslint-disable-line default-param-last
+  action: Action,
+  globalState: GlobalState,
+): SessionState => {
   switch (action.type) {
     case DEAD_QUEUE:
       return {
@@ -206,17 +215,38 @@ export default (state: SessionState = initialState, action: Action): SessionStat
         pushToken: action.pushToken,
       };
 
-    case TOGGLE_OUTBOX_SENDING:
-      return { ...state, outboxSending: action.sending };
-
-    case DEBUG_FLAG_TOGGLE:
+    case REGISTER_PUSH_TOKEN_START: {
+      // TODO(#5006): Do for any account, not just the active one
+      const activeAccountState = tryGetActiveAccountState(globalState);
+      if (
+        !activeAccountState
+        || keyOfIdentity(action.identity) !== keyOfIdentity(getIdentity(activeAccountState))
+      ) {
+        return state;
+      }
       return {
         ...state,
-        debug: {
-          ...state.debug,
-          [action.key]: action.value,
-        },
+        registerPushTokenRequestsInProgress: state.registerPushTokenRequestsInProgress + 1,
       };
+    }
+
+    case REGISTER_PUSH_TOKEN_END: {
+      // TODO(#5006): Do for any account, not just the active one
+      const activeAccountState = tryGetActiveAccountState(globalState);
+      if (
+        !activeAccountState
+        || keyOfIdentity(action.identity) !== keyOfIdentity(getIdentity(activeAccountState))
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        registerPushTokenRequestsInProgress: state.registerPushTokenRequestsInProgress - 1,
+      };
+    }
+
+    case TOGGLE_OUTBOX_SENDING:
+      return { ...state, outboxSending: action.sending };
 
     case DISMISS_SERVER_COMPAT_NOTICE:
       return {

@@ -14,9 +14,9 @@ import { REGISTER_START, REGISTER_ABORT, REGISTER_COMPLETE, DEAD_QUEUE } from '.
 import { logout } from '../account/logoutActions';
 import eventToAction from './eventToAction';
 import doEventActionSideEffects from './doEventActionSideEffects';
-import { getAccount, tryGetAuth, getIdentity } from '../selectors';
+import { getAccount, tryGetAuth, getOwnUser, getIdentity } from '../selectors';
 import { getHaveServerData } from '../haveServerDataSelectors';
-import { getOwnUserRole, roleIsAtLeast } from '../permissionSelectors';
+import { roleIsAtLeast } from '../permissionSelectors';
 import { Role } from '../api/permissionsTypes';
 import { authOfAccount, identityOfAccount, identityOfAuth } from '../account/accountMisc';
 import { BackoffMachine, TimeoutError } from '../utils/async';
@@ -34,7 +34,11 @@ import { tryFetch, fetchPrivateMessages } from '../message/fetchActions';
 import { MIN_RECENTPMS_SERVER_VERSION } from '../pm-conversations/pmConversationsModel';
 import { sendOutbox } from '../outbox/outboxActions';
 import { initNotifications, tryStopNotifications } from '../notification/notifTokens';
-import { kMinSupportedVersion, kNextMinSupportedVersion } from '../common/ServerCompatBanner';
+import {
+  kMinSupportedVersion,
+  kNextMinSupportedVersion,
+  kServerSupportDocUrl,
+} from '../common/ServerCompatBanner';
 import { maybeRefreshServerEmojiData } from '../emoji/data';
 
 const registerStart = (): PerAccountAction => ({
@@ -73,7 +77,7 @@ const registerAbort =
           const realmStr = getIdentity(getState()).realm.toString();
           switch (reason) {
             case 'server':
-              return roleIsAtLeast(getOwnUserRole(getState()), Role.Admin)
+              return roleIsAtLeast(getOwnUser(getState()).role, Role.Admin)
                 ? `Could not connect to ${realmStr} because the server encountered an error. Please check the server logs.`
                 : `Could not connect to ${realmStr} because the server encountered an error. Please ask an admin to check the server logs.`;
             case 'network':
@@ -171,11 +175,7 @@ export const registerAndStartPolling =
           'Could not connect',
           `${identity.realm.toString()} is running Zulip Server ${e.version.raw()}, which is unsupported. The minimum supported version is Zulip Server ${kMinSupportedVersion.raw()}.`,
           {
-            url: new URL(
-              // TODO: Instead, link to new Help Center doc once we have it:
-              //   https://github.com/zulip/zulip/issues/23842
-              'https://zulip.readthedocs.io/en/stable/overview/release-lifecycle.html#compatibility-and-upgrading',
-            ),
+            url: kServerSupportDocUrl,
             globalSettings: getGlobalSettings(),
           },
         );

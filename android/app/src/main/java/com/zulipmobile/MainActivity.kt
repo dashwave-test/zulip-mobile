@@ -1,30 +1,14 @@
 package com.zulipmobile
 
-import android.os.Build
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.webkit.WebView
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
-import com.facebook.react.ReactApplication
-import com.facebook.react.ReactRootView
-import com.facebook.react.bridge.ReactContext
-import com.zulipmobile.notifications.*
+import com.zulipmobile.notifications.maybeHandleViewNotif
 import com.zulipmobile.sharing.handleSend
 import expo.modules.ReactActivityDelegateWrapper
-
-// A convenience shortcut.
-fun ReactApplication.tryGetReactContext(): ReactContext? =
-    this.reactNativeHost.tryGetReactInstanceManager()?.currentReactContext
-
-/**
- * Like `.application`, but with a more specific type.
- *
- * This expresses the invariant that a ReactActivity's application
- * should always be a ReactApplication.
- */
-val ReactActivity.reactApplication: ReactApplication
-    get() = application as ReactApplication
 
 open class MainActivity : ReactActivity() {
     /**
@@ -45,7 +29,6 @@ open class MainActivity : ReactActivity() {
     /* Returns true just if we did handle the intent. */
     private fun maybeHandleIntent(intent: Intent?): Boolean {
         intent ?: return false
-        val url = intent.data
         when (intent.action) {
             // Share-to-Zulip
             Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE -> {
@@ -53,18 +36,15 @@ open class MainActivity : ReactActivity() {
                 return true
             }
 
-            Intent.ACTION_VIEW -> when {
-                // Launch MainActivity on tapping a notification
-                url?.scheme == "zulip" && url.authority == NOTIFICATION_URL_AUTHORITY -> {
-                    val data = intent.getBundleExtra(EXTRA_NOTIFICATION_DATA) ?: return false
-                    logNotificationData("notif opened", data)
-                    notifyReact(reactApplication.tryGetReactContext(), data)
+            Intent.ACTION_VIEW -> {
+                if (maybeHandleViewNotif(intent, reactApplication.tryGetReactContext())) {
+                    // Notification tapped
                     return true
                 }
 
                 // Let RN handle other intents.  In particular web-auth intents (parsed in
                 // src/start/webAuth.js) have ACTION_VIEW, scheme "zulip", and authority "login".
-                else -> return false
+                return false
             }
 
             // For other intents, let RN handle it.

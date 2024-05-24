@@ -23,11 +23,7 @@ import {
 import {
   getAuth,
   getRealm,
-  getSession,
-  getFirstMessageId,
-  getLastMessageId,
   getCaughtUpForNarrow,
-  getFetchingForNarrow,
   getStreamsById,
   getZulipFeatureLevel,
 } from '../selectors';
@@ -42,7 +38,11 @@ import { ALL_PRIVATE_NARROW, apiNarrowOfNarrow, caseNarrow, topicNarrow } from '
 import { BackoffMachine, promiseTimeout, TimeoutError } from '../utils/async';
 import { getAllUsersById, getOwnUserId } from '../users/userSelectors';
 import type { ServerSettings } from '../api/settings/getServerSettings';
-import { kMinSupportedVersion, kNextMinSupportedVersion } from '../common/ServerCompatBanner';
+import {
+  kMinSupportedVersion,
+  kNextMinSupportedVersion,
+  kServerSupportDocUrl,
+} from '../common/ServerCompatBanner';
 
 const messageFetchStart = (
   narrow: Narrow,
@@ -102,7 +102,9 @@ export const fetchMessages =
     anchor: number,
     numBefore: number,
     numAfter: number,
-  |}): ThunkAction<Promise<$ReadOnlyArray<Message>>> =>
+  |}): ThunkAction<
+    Promise<{| messages: $ReadOnlyArray<Message>, foundNewest: boolean, foundOldest: boolean |}>,
+  > =>
   async (dispatch, getState) => {
     dispatch(messageFetchStart(fetchArgs.narrow, fetchArgs.numBefore, fetchArgs.numAfter));
     try {
@@ -135,7 +137,7 @@ export const fetchMessages =
           ownUserId: getOwnUserId(getState()),
         }),
       );
-      return messages;
+      return { messages, foundNewest: found_newest, foundOldest: found_oldest };
     } catch (errorIllTyped) {
       const e: mixed = errorIllTyped; // https://github.com/facebook/flow/issues/2470
       dispatch(
@@ -165,48 +167,6 @@ export const fetchMessages =
         numAfter: fetchArgs.numAfter,
       });
       throw e;
-    }
-  };
-
-export const fetchOlder =
-  (narrow: Narrow): ThunkAction<void> =>
-  (dispatch, getState) => {
-    const state = getState();
-    const firstMessageId = getFirstMessageId(state, narrow);
-    const caughtUp = getCaughtUpForNarrow(state, narrow);
-    const fetching = getFetchingForNarrow(state, narrow);
-    const { loading } = getSession(state);
-
-    if (!loading && !fetching.older && !caughtUp.older && firstMessageId !== undefined) {
-      dispatch(
-        fetchMessages({
-          narrow,
-          anchor: firstMessageId,
-          numBefore: config.messagesPerRequest,
-          numAfter: 0,
-        }),
-      );
-    }
-  };
-
-export const fetchNewer =
-  (narrow: Narrow): ThunkAction<void> =>
-  (dispatch, getState) => {
-    const state = getState();
-    const lastMessageId = getLastMessageId(state, narrow);
-    const caughtUp = getCaughtUpForNarrow(state, narrow);
-    const fetching = getFetchingForNarrow(state, narrow);
-    const { loading } = getSession(state);
-
-    if (!loading && !fetching.newer && !caughtUp.newer && lastMessageId !== undefined) {
-      dispatch(
-        fetchMessages({
-          narrow,
-          anchor: lastMessageId,
-          numBefore: 0,
-          numAfter: config.messagesPerRequest,
-        }),
-      );
     }
   };
 
@@ -278,7 +238,13 @@ export const fetchMessagesInNarrow =
   (
     narrow: Narrow,
     anchor: number = FIRST_UNREAD_ANCHOR,
-  ): ThunkAction<Promise<$ReadOnlyArray<Message> | void>> =>
+  ): ThunkAction<
+    Promise<{|
+      messages: $ReadOnlyArray<Message>,
+      foundNewest: boolean,
+      foundOldest: boolean,
+    |} | void>,
+  > =>
   async (dispatch, getState) => {
     if (!isFetchNeededAtAnchor(getState(), narrow, anchor)) {
       return undefined;
@@ -408,7 +374,6 @@ export async function fetchServerSettings(realm: URL): Promise<
 > {
   try {
     return { type: 'success', value: await api.getServerSettings(realm) };
-    // TODO(#5102): Disallow connecting to ancient servers
   } catch (errorIllTyped) {
     const error: mixed = errorIllTyped;
 
@@ -438,13 +403,7 @@ export async function fetchServerSettings(realm: URL): Promise<
           minSupportedVersion: kMinSupportedVersion.raw(),
         },
       };
-      learnMoreButton = {
-        url: new URL(
-          // TODO: Instead, link to new Help Center doc once we have it:
-          //   https://github.com/zulip/zulip/issues/23842
-          'https://zulip.readthedocs.io/en/stable/overview/release-lifecycle.html#compatibility-and-upgrading',
-        ),
-      };
+      learnMoreButton = { url: kServerSupportDocUrl };
       logging.setTagsFromServerVersion(error.version);
       logging.error(error, {
         kMinAllowedServerVersion: kMinAllowedServerVersion.raw(),

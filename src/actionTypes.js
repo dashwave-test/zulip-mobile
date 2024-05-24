@@ -5,7 +5,6 @@ import {
   APP_ONLINE,
   DEAD_QUEUE,
   APP_ORIENTATION,
-  DEBUG_FLAG_TOGGLE,
   ACCOUNT_SWITCH,
   ACCOUNT_REMOVE,
   LOGIN_SUCCESS,
@@ -59,6 +58,10 @@ import {
   EVENT_SUBSCRIPTION,
   EVENT,
   DISMISS_SERVER_COMPAT_NOTICE,
+  REGISTER_PUSH_TOKEN_START,
+  REGISTER_PUSH_TOKEN_END,
+  SET_SILENCE_SERVER_PUSH_SETUP_WARNINGS,
+  DISMISS_SERVER_NOTIFS_EXPIRING_BANNER,
 } from './actionConstants';
 
 import type { UserMessageFlag } from './api/modelTypes';
@@ -76,6 +79,7 @@ import type {
   RestartEvent,
   UpdateMessageEvent,
   RealmUserUpdateEvent,
+  UserTopicEvent,
 } from './api/eventTypes';
 import type { MutedTopicTuple, PresenceSnapshot } from './api/apiTypes';
 import type { MessageMove } from './api/misc';
@@ -140,12 +144,6 @@ type AppOrientationAction = $ReadOnly<{|
   orientation: Orientation,
 |}>;
 
-type DebugFlagToggleAction = $ReadOnly<{|
-  type: typeof DEBUG_FLAG_TOGGLE,
-  key: string,
-  value: boolean,
-|}>;
-
 type DismissServerCompatNoticeAction = $ReadOnly<{|
   type: typeof DISMISS_SERVER_COMPAT_NOTICE,
 |}>;
@@ -180,6 +178,16 @@ type DismissServerPushSetupNoticeAction = $ReadOnly<{|
   date: Date,
 |}>;
 
+type DismissServerNotifsExpiringBannerAction = $ReadOnly<{|
+  type: typeof DISMISS_SERVER_NOTIFS_EXPIRING_BANNER,
+  date: Date,
+|}>;
+
+type SetSilenceServerPushSetupWarningsAction = $ReadOnly<{|
+  type: typeof SET_SILENCE_SERVER_PUSH_SETUP_WARNINGS,
+  value: boolean,
+|}>;
+
 /** We learned the device token from the system.  See `SessionState`. */
 type GotPushTokenAction = $ReadOnly<{|
   type: typeof GOT_PUSH_TOKEN,
@@ -189,6 +197,18 @@ type GotPushTokenAction = $ReadOnly<{|
 /** We're about to tell the server to forget our device token. */
 type UnackPushTokenAction = $ReadOnly<{|
   type: typeof UNACK_PUSH_TOKEN,
+  identity: Identity,
+|}>;
+
+/** We've started a request to register our device token. */
+type RegisterPushTokenStartAction = $ReadOnly<{|
+  type: typeof REGISTER_PUSH_TOKEN_START,
+  identity: Identity,
+|}>;
+
+/** A request to register our device token has ended (success or failure). */
+type RegisterPushTokenEndAction = $ReadOnly<{|
+  type: typeof REGISTER_PUSH_TOKEN_END,
   identity: Identity,
 |}>;
 
@@ -343,8 +363,9 @@ type GenericEventAction = $ReadOnly<{|
     | RestartEvent
     | RealmUpdateEvent
     | RealmUpdateDictEvent
+    | RealmUserUpdateEvent
     | UserSettingsUpdateEvent
-    | RealmUserUpdateEvent,
+    | UserTopicEvent,
 |}>;
 
 type EventNewMessageAction = $ReadOnly<{|
@@ -662,6 +683,8 @@ export type PerAccountAction =
   // state.session
   | DismissServerCompatNoticeAction
   | DismissServerPushSetupNoticeAction
+  | DismissServerNotifsExpiringBannerAction
+  | SetSilenceServerPushSetupWarningsAction
   | ToggleOutboxSendingAction
   ;
 
@@ -675,10 +698,9 @@ export type AllAccountsAction =
   | AccountRemoveAction
   | LoginSuccessAction
   | LogoutAction
-  | DismissServerPushSetupNoticeAction
-  // These two are about a specific account… but not just the active one,
+  // These four are about a specific account… but not just the active one,
   // and they encode which one they mean.
-  | AckPushTokenAction | UnackPushTokenAction
+  | RegisterPushTokenEndAction | RegisterPushTokenStartAction | AckPushTokenAction | UnackPushTokenAction
   ;
 
 /** Plain actions not affecting any per-account state. */
@@ -689,7 +711,6 @@ export type AccountIndependentAction =
   | AppOnlineAction
   | AppOrientationAction
   | GotPushTokenAction
-  | DebugFlagToggleAction
   ;
 
 //
@@ -790,6 +811,8 @@ export function isPerAccountApplicableAction(action: Action): boolean {
     case CLEAR_TYPING:
     case DISMISS_SERVER_COMPAT_NOTICE:
     case DISMISS_SERVER_PUSH_SETUP_NOTICE:
+    case DISMISS_SERVER_NOTIFS_EXPIRING_BANNER:
+    case SET_SILENCE_SERVER_PUSH_SETUP_WARNINGS:
     case TOGGLE_OUTBOX_SENDING:
       (action: PerAccountAction);
       (action: PerAccountApplicableAction);
@@ -800,6 +823,8 @@ export function isPerAccountApplicableAction(action: Action): boolean {
     case ACCOUNT_REMOVE:
     case LOGIN_SUCCESS:
     case LOGOUT:
+    case REGISTER_PUSH_TOKEN_START:
+    case REGISTER_PUSH_TOKEN_END:
     case ACK_PUSH_TOKEN:
     case UNACK_PUSH_TOKEN:
       (action: AllAccountsAction);
@@ -810,7 +835,6 @@ export function isPerAccountApplicableAction(action: Action): boolean {
     case APP_ONLINE:
     case APP_ORIENTATION:
     case GOT_PUSH_TOKEN:
-    case DEBUG_FLAG_TOGGLE:
       (action: AccountIndependentAction);
       return false;
 

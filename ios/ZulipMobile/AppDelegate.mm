@@ -11,6 +11,9 @@
 
 #import <React/RCTAppSetupUtils.h>
 
+#import "ExpoModulesCore-Swift.h"
+#import "ZulipMobile-Swift.h"
+
 #if RCT_NEW_ARCH_ENABLED
 #import <React/CoreModulesPlugins.h>
 #import <React/RCTCxxBridgeDelegate.h>
@@ -114,20 +117,14 @@
   [RNCPushNotificationIOS didFailToRegisterForRemoteNotificationsWithError:error];
 }
 
-// Required for the notification event. You must call the completion handler after handling the remote notification.
-- (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
-                                                       fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
-{
-  [RNCPushNotificationIOS didReceiveRemoteNotification:userInfo fetchCompletionHandler:completionHandler];
-}
-
 // Required for localNotification event
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center
 didReceiveNotificationResponse:(UNNotificationResponse *)response
          withCompletionHandler:(void (^)(void))completionHandler
 {
-  [RNCPushNotificationIOS didReceiveNotificationResponse:response];
-  completionHandler();
+  [ZLPNotificationsEvents userNotificationCenter:center
+                                      didReceive:response
+                           withCompletionHandler:completionHandler];
 }
 
 // Called when a notification is delivered to a foreground app.

@@ -82,7 +82,6 @@ export const IconApple: SpecificIconType = makeIcon(IoniconsIcon, 'logo-apple');
 export const IconGoogle: SpecificIconType = makeIcon(IoniconsIcon, 'logo-google');
 export const IconGitHub: SpecificIconType = makeIcon(Feather, 'github');
 export const IconWindows: SpecificIconType = makeIcon(IoniconsIcon, 'logo-windows');
-export const IconDiagnostics: SpecificIconType = makeIcon(Feather, 'activity');
 export const IconNotifications: SpecificIconType = makeIcon(Feather, 'bell');
 export const IconLanguage: SpecificIconType = makeIcon(Feather, 'globe');
 export const IconSettings: SpecificIconType = makeIcon(Feather, 'settings');
@@ -103,10 +102,12 @@ export const IconImage: SpecificIconType = makeIcon(Feather, 'image');
 export const IconCamera: SpecificIconType = makeIcon(Feather, 'camera');
 export const IconTerminal: SpecificIconType = makeIcon(Feather, 'terminal');
 export const IconMoreHorizontal: SpecificIconType = makeIcon(Feather, 'more-horizontal');
+export const IconSmartphone: SpecificIconType = makeIcon(Feather, 'smartphone');
+export const IconServer: SpecificIconType = makeIcon(Feather, 'server');
 export const IconEdit: SpecificIconType = makeIcon(Feather, 'edit');
 export const IconPlusSquare: SpecificIconType = makeIcon(Feather, 'plus-square');
 export const IconVideo: SpecificIconType = makeIcon(Feather, 'video');
-export const IconUserMuted: SpecificIconType = makeIcon(FontAwesome, 'user');
+export const IconUserBlank: SpecificIconType = makeIcon(FontAwesome, 'user');
 export const IconAttach: SpecificIconType = makeIcon(Feather, 'paperclip');
 export const IconAttachment: SpecificIconType = makeIcon(IoniconsIcon, 'document-attach-outline');
 export const IconGroup: SpecificIconType = makeIcon(FontAwesome, 'group');
@@ -116,5 +117,6 @@ export const IconAlertTriangle: SpecificIconType = makeIcon(Feather, 'alert-tria
 // WildcardMentionItem depends on this being square.
 export const IconWildcardMention: SpecificIconType = makeIcon(FontAwesome, 'bullhorn');
 
-// eslint-disable-next-line react/function-component-definition
+/* eslint-disable react/function-component-definition */
 export const IconWebPublic: SpecificIconType = props => <ZulipIcon name="globe" {...props} />;
+export const IconFollow: SpecificIconType = props => <ZulipIcon name="follow" {...props} />;

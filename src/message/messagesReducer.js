@@ -139,8 +139,14 @@ export default (
   globalState: PerAccountState,
 ): MessagesState => {
   switch (action.type) {
-    case REGISTER_COMPLETE:
     case RESET_ACCOUNT_DATA:
+      return initialState;
+
+    // Reset to clear stale data. We don't initialize the
+    // messages/narrows/flags model using initial data; instead, we fetch
+    // chunks of data as needed with api.getMessages. See
+    //   https://zulip.readthedocs.io/en/latest/subsystems/events-system.html#messages
+    case REGISTER_COMPLETE:
       return initialState;
 
     case MESSAGE_FETCH_COMPLETE:
@@ -263,10 +269,7 @@ export default (
                 return oldMessage;
               }
 
-              // FlowIssue: https://github.com/facebook/flow/issues/8833
-              //   The cast `: 'stream'` is silly but harmless, and works
-              //   around a Flow issue which causes an error.
-              if (oldMessage.type !== ('stream': 'stream')) {
+              if (oldMessage.type !== 'stream') {
                 logging.warn('messagesReducer: got update_message with stream/topic move on PM');
                 return oldMessage;
               }

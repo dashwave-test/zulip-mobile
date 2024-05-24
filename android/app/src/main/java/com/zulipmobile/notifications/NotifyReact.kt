@@ -2,14 +2,12 @@
 
 package com.zulipmobile.notifications
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import com.facebook.react.ReactInstanceManager
-import com.facebook.react.ReactNativeHost
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactContext
-import com.facebook.react.common.LifecycleState
-import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.zulipmobile.*
 
 /**
  * Methods for telling React about a notification.
@@ -19,60 +17,29 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
  */
 
 /**
- * Like getReactInstanceManager, but just return what exists; avoid trying to create.
+ * Recognize if an ACTION_VIEW intent came from tapping a notification; handle it if so
  *
- * When there isn't already an instance manager, if we call
- * getReactInstanceManager it'll try to create one... which asserts we're
- * on the UI thread, which isn't true if e.g. we got here from a Service.
- */
-fun ReactNativeHost.tryGetReactInstanceManager(): ReactInstanceManager? =
-    if (this.hasInstance()) this.reactInstanceManager else null
-
-/**
- * A distillation of ReactContext.getLifecycleState() and related information.
+ * Just if the intent is recognized,
+ * sends a 'notificationOpened' event to the JavaScript layer
+ * and returns true.
+ * Else does nothing and returns false.
  *
- * See ReactContext.getAppStatus().
+ * Do not call if `intent.action` is not ACTION_VIEW.
  */
-enum class ReactAppStatus {
-    /**
-     * The main activity has either never yet been in the foreground,
-     * or never will again.  There might not be an active JS instance.
-     */
-    NOT_RUNNING,
+internal fun maybeHandleViewNotif(intent: Intent, maybeReactContext: ReactContext?): Boolean {
+    assert(intent.action == Intent.ACTION_VIEW)
 
-    /**
-     * The main activity has been in the foreground, is out of foreground
-     * now, but might come back.  There must be an active JS instance.
-     */
-    BACKGROUND,
-
-    /**
-     * The main activity is in the foreground.
-     * There must be an active JS instance.
-     */
-    FOREGROUND
-}
-
-val ReactContext.appStatus: ReactAppStatus
-    get() {
-        if (!hasActiveCatalystInstance())
-            return ReactAppStatus.NOT_RUNNING
-
-        // The RN lifecycleState:
-        //  * starts as BEFORE_CREATE
-        //  * responds to onResume, onPause, and onDestroy on the host Activity
-        //    * Android upstream docs on those:
-        //        https://developer.android.com/guide/components/activities/activity-lifecycle
-        //    * RN wires those through ReactActivity -> ReactActivityDelegate ->
-        //      ReactInstanceManager (as onHost{Resume,Pause,Destroy}) -> ReactContext
-        //  * notably goes straight BEFORE_CREATE -> RESUMED when first starting
-        //    (at least as of RN v0.59)
-        return when (lifecycleState!!) {
-            LifecycleState.BEFORE_CREATE -> ReactAppStatus.NOT_RUNNING
-            LifecycleState.BEFORE_RESUME -> ReactAppStatus.BACKGROUND
-            LifecycleState.RESUMED -> ReactAppStatus.FOREGROUND
-        }
+    val url = intent.data
+    // Launch MainActivity on tapping a notification
+    if (url?.scheme == "zulip" && url.authority == NOTIFICATION_URL_AUTHORITY) {
+        val data = intent.getBundleExtra(EXTRA_NOTIFICATION_DATA) ?: return false
+        logNotificationData("notif opened", data)
+        notifyReact(maybeReactContext, data)
+        return true
     }
+
+    return false
+}
 
 internal fun notifyReact(reactContext: ReactContext?, data: Bundle) {
     // TODO deduplicate this with handleSend in SharingHelper.kt; see
@@ -88,12 +55,6 @@ internal fun notifyReact(reactContext: ReactContext?, data: Bundle) {
         ReactAppStatus.BACKGROUND, ReactAppStatus.FOREGROUND ->
             // JS is running and has already reached foreground.  It won't check
             // initialNotification again, but it will see a notificationOpened event.
-            emit(reactContext, "notificationOpened", Arguments.fromBundle(data))
+            reactContext.emitEvent("notificationOpened", Arguments.fromBundle(data))
     }
-}
-
-fun emit(reactContext: ReactContext, eventName: String, data: Any?) {
-    reactContext
-        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-        .emit(eventName, data)
 }

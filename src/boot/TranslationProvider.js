@@ -1,6 +1,5 @@
 /* @flow strict-local */
-import React, { type Context, useContext } from 'react';
-import type { ComponentType, ElementConfig, Node } from 'react';
+import * as React from 'react';
 import { Text } from 'react-native';
 import { IntlProvider, IntlContext } from 'react-intl';
 import type { IntlShape } from 'react-intl';
@@ -8,31 +7,18 @@ import type { IntlShape } from 'react-intl';
 import type { GetText } from '../types';
 import { useGlobalSelector } from '../react-redux';
 import { getGlobalSettings } from '../selectors';
-import messages from '../i18n/messages';
+import messagesByLanguage from '../i18n/messagesByLanguage';
+import { getZulipFeatureLevel, tryGetActiveAccountState } from '../account/accountsSelectors';
+import { objectFromEntries } from '../jsBackport';
+import { objectEntries } from '../flowPonyfill';
+import {
+  streamChannelRenameFeatureLevel,
+  streamChannelRenamesMap,
+} from './streamChannelRenamesMap';
+import { getHaveServerData } from '../haveServerDataSelectors';
 
 // $FlowFixMe[incompatible-type] could put a well-typed mock value here, to help write tests
-export const TranslationContext: Context<GetText> = React.createContext(undefined);
-
-/**
- * Provide `_` to the wrapped component, passing other props through.
- *
- * This can be useful when the component is already using its `context`
- * property for a different context provider.  When that isn't the case,
- * simply saying `context: TranslationContext` may be more convenient.
- * Or in a function component, `const _ = useContext(TranslationContext);`.
- */
-export function withGetText<P: { +_: GetText, ... }, C: ComponentType<P>>(
-  WrappedComponent: C,
-): ComponentType<$ReadOnly<$Exact<$Diff<ElementConfig<C>, {| _: GetText |}>>>> {
-  // eslint-disable-next-line func-names
-  return function (props: $Exact<$Diff<ElementConfig<C>, {| _: GetText |}>>): Node {
-    return (
-      <TranslationContext.Consumer>
-        {_ => <WrappedComponent _={_} {...props} />}
-      </TranslationContext.Consumer>
-    );
-  };
-}
+export const TranslationContext: React.Context<GetText> = React.createContext(undefined);
 
 const makeGetText = (intl: IntlShape): GetText => {
   const _ = (message, values_) => {
@@ -61,8 +47,8 @@ const makeGetText = (intl: IntlShape): GetText => {
  *
  * See the `GetTypes` type for why we like the new shape.
  */
-function TranslationContextTranslator(props: {| +children: Node |}): Node {
-  const intlContextValue = useContext(IntlContext);
+function TranslationContextTranslator(props: {| +children: React.Node |}): React.Node {
+  const intlContextValue = React.useContext(IntlContext);
 
   return (
     <TranslationContext.Provider value={makeGetText(intlContextValue)}>
@@ -72,15 +58,63 @@ function TranslationContextTranslator(props: {| +children: Node |}): Node {
 }
 
 type Props = $ReadOnly<{|
-  children: Node,
+  children: React.Node,
 |}>;
 
-export default function TranslationProvider(props: Props): Node {
+/**
+ * Like messagesByLanguage but with "channel" terminology instead of "stream".
+ */
+const messagesByLanguageRenamed = objectFromEntries(
+  objectEntries(messagesByLanguage).map(([language, messages]) => [
+    language,
+    objectFromEntries(
+      objectEntries(messages).map(([messageId, message]) => {
+        const renamedMessageId = streamChannelRenamesMap[messageId];
+        if (renamedMessageId == null) {
+          return [messageId, message];
+        }
+
+        const renamedMessage = messages[renamedMessageId];
+        if (renamedMessage === renamedMessageId && message !== messageId) {
+          // The newfangled "channel" string hasn't been translated yet, but
+          // the older "stream" string has.  Consider falling back to that.
+          if (/^en($|-)/.test(language)) {
+            // The language is a variety of English.  Prefer the newer
+            // terminology, even though awaiting translation.  (Most of our
+            // strings don't change at all between one English and another.)
+            return [messageId, renamedMessage];
+          }
+          // Use the translation we have, even of the older terminology.
+          // (In many languages the translations have used an equivalent
+          // of "channel" all along anyway.)
+          return [messageId, message];
+        }
+        return [messageId, renamedMessage];
+      }),
+    ),
+  ]),
+);
+
+export default function TranslationProvider(props: Props): React.Node {
   const { children } = props;
   const language = useGlobalSelector(state => getGlobalSettings(state).language);
 
+  const activeAccountState = useGlobalSelector(tryGetActiveAccountState);
+
+  // TODO(server-9.0) remove "stream" terminology
+  const effectiveMessagesByLanguage =
+    activeAccountState == null
+    || !getHaveServerData(activeAccountState)
+    || getZulipFeatureLevel(activeAccountState) >= streamChannelRenameFeatureLevel
+      ? messagesByLanguageRenamed
+      : messagesByLanguage;
+
   return (
-    <IntlProvider locale={language} textComponent={Text} messages={messages[language]}>
+    <IntlProvider
+      locale={language}
+      textComponent={Text}
+      messages={effectiveMessagesByLanguage[language]}
+    >
       <TranslationContextTranslator>{children}</TranslationContextTranslator>
     </IntlProvider>
   );

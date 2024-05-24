@@ -10,7 +10,6 @@ import {
   getUnreadMentionsTotal,
   getUnreadTotal,
   getUnreadStreamsAndTopics,
-  getUnreadStreamsAndTopicsSansMuted,
 } from '../unreadSelectors';
 
 import * as eg from '../../__tests__/lib/exampleData';
@@ -22,6 +21,7 @@ import {
   stream2,
 } from './unread-testlib';
 import { makeMuteState } from '../../mute/__tests__/mute-testlib';
+import { UserTopicVisibilityPolicy } from '../../api/modelTypes';
 
 const subscription0 = eg.makeSubscription({ stream: stream0, color: 'red' });
 const subscription2 = eg.makeSubscription({ stream: stream2, color: 'blue' });
@@ -207,131 +207,6 @@ describe('getUnreadStreamsAndTopics', () => {
     expect(unreadCount).toEqual([]);
   });
 
-  test('muted streams are included', () => {
-    const state = eg.reduxStatePlus({
-      subscriptions: subscriptions.map(s => ({ ...s, in_home_view: false })),
-      unread: unreadState,
-    });
-
-    const unreadCount = getUnreadStreamsAndTopics(state);
-
-    expect(unreadCount).toEqual([
-      {
-        color: 'red',
-        data: [
-          {
-            isMuted: false,
-            key: 'another topic',
-            lastUnreadMsgId: 5,
-            topic: 'another topic',
-            unread: 2,
-            isMentioned: false,
-          },
-          {
-            isMuted: false,
-            key: 'a topic',
-            lastUnreadMsgId: 3,
-            topic: 'a topic',
-            unread: 3,
-            isMentioned: true,
-          },
-        ],
-        isMuted: true,
-        isPinned: false,
-        isPrivate: false,
-        isWebPublic: false,
-        key: 'stream:0',
-        streamId: 0,
-        streamName: 'stream 0',
-        unread: 5,
-      },
-      {
-        color: 'blue',
-        data: [
-          {
-            isMuted: false,
-            key: 'some other topic',
-            lastUnreadMsgId: 7,
-            topic: 'some other topic',
-            unread: 2,
-            isMentioned: false,
-          },
-        ],
-        isMuted: true,
-        isPinned: false,
-        isPrivate: false,
-        isWebPublic: false,
-        key: 'stream:2',
-        streamId: 2,
-        streamName: 'stream 2',
-        unread: 2,
-      },
-    ]);
-  });
-
-  test('muted topics inside non muted streams are included', () => {
-    const state = eg.reduxStatePlus({
-      subscriptions,
-      unread: unreadState,
-      mute: makeMuteState([[stream0, 'a topic']]),
-    });
-
-    const unreadCount = getUnreadStreamsAndTopics(state);
-
-    expect(unreadCount).toEqual([
-      {
-        color: 'red',
-        data: [
-          {
-            isMuted: false,
-            key: 'another topic',
-            topic: 'another topic',
-            unread: 2,
-            lastUnreadMsgId: 5,
-            isMentioned: false,
-          },
-          {
-            isMuted: true,
-            key: 'a topic',
-            topic: 'a topic',
-            unread: 3,
-            lastUnreadMsgId: 3,
-            isMentioned: true,
-          },
-        ],
-        isMuted: false,
-        isPinned: false,
-        isPrivate: false,
-        isWebPublic: false,
-        key: 'stream:0',
-        streamId: 0,
-        streamName: 'stream 0',
-        unread: 2,
-      },
-      {
-        color: 'blue',
-        data: [
-          {
-            isMuted: false,
-            key: 'some other topic',
-            lastUnreadMsgId: 7,
-            topic: 'some other topic',
-            unread: 2,
-            isMentioned: false,
-          },
-        ],
-        isMuted: false,
-        isPinned: false,
-        isPrivate: false,
-        isWebPublic: false,
-        key: 'stream:2',
-        streamId: 2,
-        streamName: 'stream 2',
-        unread: 2,
-      },
-    ]);
-  });
-
   test('group data by stream and topics inside, count unread', () => {
     const state = eg.reduxStatePlus({
       subscriptions,
@@ -347,7 +222,6 @@ describe('getUnreadStreamsAndTopics', () => {
         streamName: 'stream 0',
         color: 'red',
         unread: 5,
-        isMuted: false,
         isPinned: false,
         isPrivate: false,
         isWebPublic: false,
@@ -356,7 +230,6 @@ describe('getUnreadStreamsAndTopics', () => {
             key: 'another topic',
             topic: 'another topic',
             unread: 2,
-            isMuted: false,
             lastUnreadMsgId: 5,
             isMentioned: false,
           },
@@ -364,7 +237,6 @@ describe('getUnreadStreamsAndTopics', () => {
             key: 'a topic',
             topic: 'a topic',
             unread: 3,
-            isMuted: false,
             lastUnreadMsgId: 3,
             isMentioned: true,
           },
@@ -376,7 +248,6 @@ describe('getUnreadStreamsAndTopics', () => {
         streamName: 'stream 2',
         color: 'blue',
         unread: 2,
-        isMuted: false,
         isPinned: false,
         isPrivate: false,
         isWebPublic: false,
@@ -385,7 +256,6 @@ describe('getUnreadStreamsAndTopics', () => {
             key: 'some other topic',
             topic: 'some other topic',
             unread: 2,
-            isMuted: false,
             lastUnreadMsgId: 7,
             isMentioned: false,
           },
@@ -427,7 +297,6 @@ describe('getUnreadStreamsAndTopics', () => {
         streamId: 1,
         streamName: 'xyz stream',
         color: 'blue',
-        isMuted: false,
         isPrivate: false,
         isPinned: true,
         isWebPublic: false,
@@ -437,7 +306,6 @@ describe('getUnreadStreamsAndTopics', () => {
             key: 'e topic',
             topic: 'e topic',
             unread: 1,
-            isMuted: false,
             lastUnreadMsgId: 10,
             isMentioned: false,
           },
@@ -445,7 +313,6 @@ describe('getUnreadStreamsAndTopics', () => {
             key: 'd topic',
             topic: 'd topic',
             unread: 1,
-            isMuted: false,
             lastUnreadMsgId: 9,
             isMentioned: false,
           },
@@ -456,7 +323,6 @@ describe('getUnreadStreamsAndTopics', () => {
         streamId: 0,
         streamName: 'abc stream',
         color: 'red',
-        isMuted: false,
         isPrivate: false,
         isPinned: false,
         isWebPublic: false,
@@ -466,7 +332,6 @@ describe('getUnreadStreamsAndTopics', () => {
             key: 'a topic',
             topic: 'a topic',
             unread: 2,
-            isMuted: false,
             lastUnreadMsgId: 5,
             isMentioned: false,
           },
@@ -474,7 +339,6 @@ describe('getUnreadStreamsAndTopics', () => {
             key: 'z topic',
             topic: 'z topic',
             unread: 3,
-            isMuted: false,
             lastUnreadMsgId: 3,
             isMentioned: false,
           },
@@ -485,25 +349,15 @@ describe('getUnreadStreamsAndTopics', () => {
         streamId: 2,
         streamName: 'def stream',
         color: 'green',
-        isMuted: false,
         isPrivate: false,
         isPinned: false,
         isWebPublic: false,
         unread: 2,
         data: [
           {
-            key: 'c topic',
-            topic: 'c topic',
-            unread: 2,
-            isMuted: true,
-            lastUnreadMsgId: 8,
-            isMentioned: false,
-          },
-          {
             key: 'b topic',
             topic: 'b topic',
             unread: 2,
-            isMuted: false,
             lastUnreadMsgId: 7,
             isMentioned: false,
           },
@@ -511,18 +365,56 @@ describe('getUnreadStreamsAndTopics', () => {
       },
     ]);
   });
-});
 
-describe('getUnreadStreamsAndTopicsSansMuted', () => {
+  test('streams with no subscription are not included', () => {
+    const state = eg.reduxStatePlus({
+      subscriptions: [],
+      unread: unreadState,
+    });
+    expect(getUnreadStreamsAndTopics(state)).toEqual([]);
+  });
+
   test('muted streams are not included', () => {
     const state = eg.reduxStatePlus({
       subscriptions: subscriptions.map(s => ({ ...s, in_home_view: false })),
       unread: unreadState,
     });
 
-    const unreadCount = getUnreadStreamsAndTopicsSansMuted(state);
+    const unreadCount = getUnreadStreamsAndTopics(state);
 
     expect(unreadCount).toEqual([]);
+  });
+
+  test('unmuted topics in muted streams are included', () => {
+    const state = eg.reduxStatePlus({
+      subscriptions: [{ ...subscription0, in_home_view: false }],
+      unread: unreadState,
+      mute: makeMuteState([[stream0, 'a topic', UserTopicVisibilityPolicy.Unmuted]]),
+    });
+
+    const unreadCount = getUnreadStreamsAndTopics(state);
+
+    expect(unreadCount).toEqual([
+      {
+        color: 'red',
+        data: [
+          {
+            key: 'a topic',
+            topic: 'a topic',
+            unread: 3,
+            lastUnreadMsgId: 3,
+            isMentioned: true,
+          },
+        ],
+        isPinned: false,
+        isPrivate: false,
+        isWebPublic: false,
+        key: 'stream:0',
+        streamId: 0,
+        streamName: 'stream 0',
+        unread: 3,
+      },
+    ]);
   });
 
   test('muted topics inside non muted streams are not included', () => {
@@ -532,14 +424,13 @@ describe('getUnreadStreamsAndTopicsSansMuted', () => {
       mute: makeMuteState([[stream0, 'a topic']]),
     });
 
-    const unreadCount = getUnreadStreamsAndTopicsSansMuted(state);
+    const unreadCount = getUnreadStreamsAndTopics(state);
 
     expect(unreadCount).toEqual([
       {
         color: 'red',
         data: [
           {
-            isMuted: false,
             key: 'another topic',
             topic: 'another topic',
             unread: 2,
@@ -547,7 +438,6 @@ describe('getUnreadStreamsAndTopicsSansMuted', () => {
             isMentioned: false,
           },
         ],
-        isMuted: false,
         isPinned: false,
         isPrivate: false,
         isWebPublic: false,

@@ -6,7 +6,13 @@
 import { NativeModules, Platform } from 'react-native';
 import PushNotificationIOS from '@react-native-community/push-notification-ios';
 
-import { GOT_PUSH_TOKEN, ACK_PUSH_TOKEN, UNACK_PUSH_TOKEN } from '../actionConstants';
+import {
+  GOT_PUSH_TOKEN,
+  ACK_PUSH_TOKEN,
+  REGISTER_PUSH_TOKEN_START,
+  UNACK_PUSH_TOKEN,
+  REGISTER_PUSH_TOKEN_END,
+} from '../actionConstants';
 import type {
   Account,
   Identity,
@@ -20,6 +26,7 @@ import * as api from '../api';
 import { getGlobalSession, getAccounts } from '../directSelectors';
 import { identityOfAccount, authOfAccount, identityOfAuth } from '../account/accountMisc';
 import { getAccount } from '../account/accountsSelectors';
+import { androidRequestNotificationsPermission } from './androidPermission';
 import * as logging from '../utils/logging';
 
 /**
@@ -119,6 +126,16 @@ const unackPushToken = (identity: Identity): AllAccountsAction => ({
   identity,
 });
 
+const registerPushTokenStart = (identity: Identity): AllAccountsAction => ({
+  type: REGISTER_PUSH_TOKEN_START,
+  identity,
+});
+
+const registerPushTokenEnd = (identity: Identity): AllAccountsAction => ({
+  type: REGISTER_PUSH_TOKEN_END,
+  identity,
+});
+
 const ackPushToken = (pushToken: string, identity: Identity): AllAccountsAction => ({
   type: ACK_PUSH_TOKEN,
   identity,
@@ -148,11 +165,22 @@ const sendPushToken =
       return;
     }
     const auth = authOfAccount(account);
-    await api.savePushToken(auth, Platform.OS, pushToken);
-    dispatch(ackPushToken(pushToken, identityOfAccount(account)));
+    const identity = identityOfAccount(account);
+    dispatch(registerPushTokenStart(identity));
+    try {
+      await api.savePushToken(auth, Platform.OS, pushToken);
+      dispatch(ackPushToken(pushToken, identity));
+    } finally {
+      dispatch(registerPushTokenEnd(identity));
+    }
   };
 
-/** Tell this account's server about our device token, if needed. */
+/**
+ * Tell this account's server about our device token, if needed.
+ *
+ * Also request permission to show notifications, if needed, and subject to
+ * platform constraints on how often we can do that.
+ */
 export const initNotifications =
   (): ThunkAction<Promise<void>> =>
   async (
@@ -160,6 +188,16 @@ export const initNotifications =
     getState,
     { getGlobalSession }, // eslint-disable-line no-shadow
   ) => {
+    if (Platform.OS === 'android') {
+      // If this is denied, no need to skip the token-registration process.
+      // The permission is all about putting up notifications in the UI:
+      // banners, vibrations, and so on. If the user doesn't want us doing
+      // that, Android will take care of it. Meanwhile, we can continue to
+      // use FCM as a communications channel and have it already set up in
+      // case the UI permission is granted later.
+      androidRequestNotificationsPermission();
+    }
+
     const { pushToken } = getGlobalSession();
     if (pushToken === null) {
       // Probably, we just don't have the token yet.  When we learn it,
@@ -178,6 +216,7 @@ export const initNotifications =
       getNotificationToken();
       return;
     }
+
     const account = getAccount(getState());
     await dispatch(sendPushToken(account, pushToken));
   };

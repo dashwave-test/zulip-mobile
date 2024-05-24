@@ -16,8 +16,7 @@ import PresenceStatusIndicator from '../common/PresenceStatusIndicator';
 import { getDisplayEmailForUser } from '../selectors';
 import { Role } from '../api/permissionsTypes';
 import ZulipTextIntl from '../common/ZulipTextIntl';
-import { getOwnUserId } from '../users/userSelectors';
-import { getOwnUserRole } from '../permissionSelectors';
+import { getFullNameReactText } from '../users/userSelectors';
 
 const componentStyles = createStyleSheet({
   componentListItem: {
@@ -44,6 +43,7 @@ const componentStyles = createStyleSheet({
 type Props = $ReadOnly<{|
   user: UserOrBot,
   showEmail: boolean,
+  showStatus: boolean,
 |}>;
 
 const getRoleText = (role: Role): LocalizableText => {
@@ -62,24 +62,15 @@ const getRoleText = (role: Role): LocalizableText => {
 };
 
 export default function AccountDetails(props: Props): Node {
-  const { user, showEmail } = props;
+  const { user, showEmail, showStatus } = props;
 
   const userStatusText = useSelector(state => getUserStatus(state, props.user.user_id).status_text);
   const userStatusEmoji = useSelector(
     state => getUserStatus(state, props.user.user_id).status_emoji,
   );
   const realm = useSelector(state => state.realm);
+  const { enableGuestUserIndicator } = realm;
   const displayEmail = getDisplayEmailForUser(realm, user);
-  const ownUserId = useSelector(getOwnUserId);
-  const ownUserRole = useSelector(getOwnUserRole);
-
-  // user.role will be missing when the server has feature level <59. For
-  // those old servers, we can use getOwnUserRole for the "own" (or "self")
-  // user's role, but nothing will give us the role of a non-"own" user, so
-  // we just won't show any role in that case.
-  // TODO(server-4.0): user.role will never be missing; use that for "own"
-  //   and non-"own" users.
-  const role = user.user_id === ownUserId ? ownUserRole : user.role;
 
   return (
     <ComponentList outerSpacing itemStyle={componentStyles.componentListItem}>
@@ -93,10 +84,10 @@ export default function AccountDetails(props: Props): Node {
           hideIfOffline={false}
           useOpaqueBackground={false}
         />
-        <ZulipText
+        <ZulipTextIntl
           selectable
           style={[styles.largerText, componentStyles.boldText]}
-          text={user.full_name}
+          text={getFullNameReactText({ user, enableGuestUserIndicator })}
         />
       </View>
       {displayEmail !== null && showEmail && (
@@ -104,30 +95,27 @@ export default function AccountDetails(props: Props): Node {
           <ZulipText selectable style={styles.largerText} text={displayEmail} />
         </View>
       )}
-      {
-        // TODO(server-4.0): Remove conditional; we'll always know the role.
-        role != null && (
-          <View>
-            <ZulipTextIntl selectable style={styles.largerText} text={getRoleText(role)} />
-          </View>
-        )
-      }
-      <View style={componentStyles.statusWrapper}>
-        {userStatusEmoji && (
-          <Emoji
-            code={userStatusEmoji.emoji_code}
-            type={emojiTypeFromReactionType(userStatusEmoji.reaction_type)}
-            size={24}
-          />
-        )}
-        {userStatusEmoji && userStatusText !== null && <View style={{ width: 2 }} />}
-        {userStatusText !== null && (
-          <ZulipText
-            style={[styles.largerText, componentStyles.statusText]}
-            text={userStatusText}
-          />
-        )}
+      <View>
+        <ZulipTextIntl selectable style={styles.largerText} text={getRoleText(user.role)} />
       </View>
+      {showStatus && (
+        <View style={componentStyles.statusWrapper}>
+          {userStatusEmoji && (
+            <Emoji
+              code={userStatusEmoji.emoji_code}
+              type={emojiTypeFromReactionType(userStatusEmoji.reaction_type)}
+              size={24}
+            />
+          )}
+          {userStatusEmoji && userStatusText !== null && <View style={{ width: 2 }} />}
+          {userStatusText !== null && (
+            <ZulipText
+              style={[styles.largerText, componentStyles.statusText]}
+              text={userStatusText}
+            />
+          )}
+        </View>
+      )}
     </ComponentList>
   );
 }

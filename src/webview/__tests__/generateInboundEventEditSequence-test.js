@@ -17,7 +17,6 @@ import {
 import type {
   PerAccountState,
   GlobalSettingsState,
-  Debug,
   Narrow,
   Message,
   Outbox,
@@ -27,16 +26,17 @@ import type { ReadWrite } from '../../generics';
 import { getEditSequence } from '../generateInboundEventEditSequence';
 import { applyEditSequence } from '../js/handleInboundEvents';
 import getMessageListElements from '../../message/getMessageListElements';
-import { getGlobalSettings, getDebug } from '../../selectors';
+import { getGlobalSettings } from '../../selectors';
 import { getBackgroundData } from '../backgroundData';
 import { randString } from '../../utils/misc';
+import { makeMuteState } from '../../mute/__tests__/mute-testlib';
+import { UserTopicVisibilityPolicy } from '../../api/modelTypes';
+import { mock_ } from '../../__tests__/lib/intl';
+import { Role } from '../../api/permissionsTypes';
 
 // Tell ESLint to recognize `check` as a helper function that runs
 // assertions.
 /* eslint jest/expect-expect: ["error", { "assertFunctionNames": ["expect", "check"] }] */
-
-// Our translation function, usually given the name _.
-const mock_ = m => (typeof m === 'object' ? m.text : m); // eslint-disable-line no-underscore-dangle
 
 const user1 = eg.makeUser({ user_id: 1, full_name: 'Nonrandom name one User' });
 const user2 = eg.makeUser({ user_id: 2, full_name: 'Nonrandom name two User' });
@@ -242,13 +242,11 @@ describe('messages -> piece descriptors -> content HTML is stable/sensible', () 
   const check = ({
     state = baseState,
     globalSettings = getGlobalSettings(eg.plusReduxState),
-    debug = getDebug(eg.plusReduxState),
     narrow,
     messages,
   }: {|
     state?: PerAccountState,
     globalSettings?: GlobalSettingsState,
-    debug?: Debug,
     narrow: Narrow,
     messages: $ReadOnlyArray<Message>,
   |}) => {
@@ -273,12 +271,12 @@ describe('messages -> piece descriptors -> content HTML is stable/sensible', () 
     applyEditSequence(
       getEditSequence(
         {
-          backgroundData: getBackgroundData(state, globalSettings, debug),
+          backgroundData: getBackgroundData(state, globalSettings),
           elements: [],
           _: mock_,
         },
         {
-          backgroundData: getBackgroundData(state, globalSettings, debug),
+          backgroundData: getBackgroundData(state, globalSettings),
           elements: getMessageListElements(messages, narrow),
           _: mock_,
         },
@@ -446,6 +444,23 @@ describe('messages -> piece descriptors -> content HTML is stable/sensible', () 
       });
     });
 
+    test('message in followed topic', () => {
+      check({
+        narrow: HOME_NARROW,
+        messages: [baseSingleMessage],
+        state: eg.reduxStatePlus({
+          streams: [...eg.plusReduxState.streams, stream1],
+          subscriptions: [
+            ...eg.plusReduxState.subscriptions,
+            eg.makeSubscription({ stream: stream1 }),
+          ],
+          mute: makeMuteState([
+            [stream1, baseSingleMessage.subject, UserTopicVisibilityPolicy.Followed],
+          ]),
+        }),
+      });
+    });
+
     describe('message with reactions', () => {
       describe('displayEmojiReactionUsers: false', () => {
         const state = eg.reduxStatePlus({
@@ -558,6 +573,31 @@ describe('messages -> piece descriptors -> content HTML is stable/sensible', () 
             state,
           });
         });
+        test('guest user reacts', () => {
+          check({
+            narrow: HOME_NARROW,
+            messages: [
+              {
+                ...baseSingleMessage,
+                reactions: [{ ...eg.realmEmojiReaction, user_id: stableOtherUser.user_id }],
+              },
+            ],
+            state: eg.reduxStatePlus({
+              settings: { ...eg.plusReduxState.settings, displayEmojiReactionUsers: true },
+              realm: {
+                ...eg.plusReduxState.realm,
+                user_id: stableSelfUser.user_id,
+                enableGuestUserIndicator: true,
+              },
+              users: [
+                stableSelfUser,
+                stableOtherUser,
+                { ...stableOtherUser, role: Role.Guest },
+                stableFourthUser,
+              ],
+            }),
+          });
+        });
       });
     });
 
@@ -655,6 +695,17 @@ describe('messages -> piece descriptors -> content HTML is stable/sensible', () 
       });
     });
 
+    test('guest sender, with enableGuestUserIndicator', () => {
+      check({
+        narrow: HOME_NARROW,
+        messages: [baseSingleMessage],
+        state: eg.reduxStatePlus({
+          realm: { ...eg.plusReduxState.realm, enableGuestUserIndicator: true },
+          users: [...eg.plusReduxState.users, { ...singleMessageSender, role: Role.Guest }],
+        }),
+      });
+    });
+
     [
       ['none', null],
       ['unicode', eg.userStatusEmojiUnicode],
@@ -695,7 +746,6 @@ describe('getEditSequence correct for interesting changes', () => {
   type CheckArg = {|
     state?: PerAccountState,
     globalSettings?: GlobalSettingsState,
-    debug?: Debug,
     narrow?: Narrow,
     messages: $ReadOnlyArray<Message>,
   |};
@@ -705,20 +755,18 @@ describe('getEditSequence correct for interesting changes', () => {
     {
       state: oldState = baseState,
       globalSettings: oldGlobalSettings = getGlobalSettings(eg.plusReduxState),
-      debug: oldDebug = getDebug(eg.plusReduxState),
       narrow: oldNarrow = HOME_NARROW,
       messages: oldMessages,
     }: CheckArg,
     {
       state: newState = baseState,
       globalSettings: newGlobalSettings = getGlobalSettings(eg.plusReduxState),
-      debug: newDebug = getDebug(eg.plusReduxState),
       narrow: newNarrow = HOME_NARROW,
       messages: newMessages,
     }: CheckArg,
   ) => {
-    const oldBackgroundData = getBackgroundData(oldState, oldGlobalSettings, oldDebug);
-    const newBackgroundData = getBackgroundData(newState, newGlobalSettings, newDebug);
+    const oldBackgroundData = getBackgroundData(oldState, oldGlobalSettings);
+    const newBackgroundData = getBackgroundData(newState, newGlobalSettings);
 
     const oldElements = getMessageListElements(oldMessages, oldNarrow);
     const newElements = getMessageListElements(newMessages, newNarrow);
@@ -891,6 +939,65 @@ describe('getEditSequence correct for interesting changes', () => {
     });
   });
 
+  describe('DM recipient headers', () => {
+    test("recipient user's name changed", () => {
+      const sender = eg.selfUser;
+      const message = eg.pmMessage({ sender, recipients: [eg.selfUser, eg.otherUser] });
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({ users: [eg.selfUser, eg.otherUser] }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            users: [eg.selfUser, { ...eg.otherUser, full_name: `${sender.full_name}, Jr.` }],
+          }),
+        },
+      );
+    });
+
+    test('enableGuestUserIndicator turns on, affecting a recipient user', () => {
+      const user = { ...eg.otherUser, role: Role.Guest };
+      const users = [eg.selfUser, user];
+      const message = eg.pmMessage({ sender: eg.selfUser, recipients: [eg.otherUser, user] });
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            realm: { ...eg.plusReduxState.realm, enableGuestUserIndicator: false },
+            users,
+          }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            realm: { ...eg.plusReduxState.realm, enableGuestUserIndicator: true },
+            users,
+          }),
+        },
+      );
+    });
+
+    test('recipient user became guest', () => {
+      const user = { ...eg.otherUser, role: Role.Member };
+      const message = eg.pmMessage({
+        sender: eg.selfUser,
+        recipients: [eg.otherUser, user],
+      });
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({ users: [eg.selfUser, user] }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({ users: [eg.selfUser, { ...user, role: Role.Guest }] }),
+        },
+      );
+    });
+  });
+
   describe('within a given message', () => {
     test('add reactions to a message', () => {
       const message = eg.streamMessage();
@@ -997,8 +1104,106 @@ describe('getEditSequence correct for interesting changes', () => {
       );
     });
 
-    // TODO(#5208): We haven't settled how we want to track name/avatar
-    test.todo("sender's name/avatar changed");
+    test('follow a topic', () => {
+      const message = eg.streamMessage();
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            mute: makeMuteState([]),
+          }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            mute: makeMuteState([[eg.stream, message.subject, UserTopicVisibilityPolicy.Followed]]),
+          }),
+        },
+      );
+    });
+
+    test('unfollow a topic', () => {
+      const message = eg.streamMessage();
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            mute: makeMuteState([[eg.stream, message.subject, UserTopicVisibilityPolicy.Followed]]),
+          }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            mute: makeMuteState([]),
+          }),
+        },
+      );
+    });
+
+    test("sender's name changed", () => {
+      const baseUsers = eg.plusReduxState.users;
+      const sender = eg.makeUser();
+      const message = eg.streamMessage({ sender });
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({ users: [...baseUsers, sender] }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            users: [...baseUsers, { ...sender, full_name: `${sender.full_name}, Jr.` }],
+          }),
+        },
+      );
+    });
+
+    test('sender becomes guest', () => {
+      const baseUsers = eg.plusReduxState.users;
+      const sender = eg.makeUser({ role: Role.Member });
+      const message = eg.streamMessage({ sender });
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            realm: { ...eg.plusReduxState.realm, enableGuestUserIndicator: true },
+            users: [...baseUsers, sender],
+          }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            realm: { ...eg.plusReduxState.realm, enableGuestUserIndicator: true },
+            users: [...baseUsers, { ...sender, role: Role.Guest }],
+          }),
+        },
+      );
+    });
+
+    test('enableGuestUserIndicator turns on, and sender is guest', () => {
+      const sender = eg.makeUser({ role: Role.Guest });
+      const users = [...eg.plusReduxState.users, sender];
+      const message = eg.streamMessage({ sender });
+      check(
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            realm: { ...eg.plusReduxState.realm, enableGuestUserIndicator: false },
+            users,
+          }),
+        },
+        {
+          messages: [message],
+          state: eg.reduxStatePlus({
+            realm: { ...eg.plusReduxState.realm, enableGuestUserIndicator: true },
+            users,
+          }),
+        },
+      );
+    });
+
+    // TODO(#5208)
+    test.todo("sender's avatar changed");
 
     test('mute a sender', () => {
       const message = eg.streamMessage();

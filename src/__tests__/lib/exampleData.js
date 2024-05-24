@@ -21,7 +21,7 @@ import { randString, randInt } from '../../utils/misc';
 import { makeUserId } from '../../api/idTypes';
 import type { InitialData } from '../../api/apiTypes';
 import { EventTypes, type UpdateMessageEvent } from '../../api/eventTypes';
-import { CreateWebPublicStreamPolicy, EmailAddressVisibility } from '../../api/permissionsTypes';
+import { CreateWebPublicStreamPolicy, Role } from '../../api/permissionsTypes';
 import type {
   AccountSwitchAction,
   LoginSuccessAction,
@@ -56,7 +56,7 @@ import rootReducer from '../../boot/reducers';
 import { authOfAccount, identityOfAccount } from '../../account/accountMisc';
 import { HOME_NARROW } from '../../utils/narrow';
 import { type BackgroundData, getBackgroundData } from '../../webview/backgroundData';
-import { getDebug, getGlobalSettings } from '../../directSelectors';
+import { getGlobalSettings } from '../../directSelectors';
 import { messageMoved } from '../../api/misc';
 
 /* ========================================================================
@@ -131,6 +131,7 @@ type UserOrBotPropertiesArgs = {|
   email?: string,
   full_name?: string,
   avatar_url?: AvatarURL,
+  role?: Role,
 |};
 
 /**
@@ -161,7 +162,7 @@ const userOrBotProperties = (args: UserOrBotPropertiesArgs) => {
 
     email: args.email ?? `${randName}@example.org`,
     full_name: args.full_name ?? `${randName} User`,
-    is_admin: false,
+    role: args.role ?? Role.Member,
     timezone: 'UTC',
     user_id,
   });
@@ -175,8 +176,6 @@ export const makeUser = (args: UserOrBotPropertiesArgs = Object.freeze({})): Use
     is_bot: false,
     bot_type: null,
     // bot_owner omitted
-
-    is_guest: false,
     profile_data: {},
   });
 
@@ -212,8 +211,8 @@ export const userStatusEmojiRealm: UserStatus['status_emoji'] = deepFreeze({
 export const realm: URL = new URL('https://zulip.example.org');
 
 /** These may be raised but should not be lowered. */
-export const recentZulipVersion: ZulipVersion = new ZulipVersion('6.0-dev-2191-gf56ce7a159');
-export const recentZulipFeatureLevel = 153;
+export const recentZulipVersion: ZulipVersion = new ZulipVersion('8.0-dev-2894-g86100cdb4e');
+export const recentZulipFeatureLevel = 226;
 
 export const makeAccount = (
   args: {|
@@ -226,6 +225,7 @@ export const makeAccount = (
     zulipVersion?: ZulipVersion | null,
     ackedPushToken?: string | null,
     lastDismissedServerPushSetupNotice?: Date | null,
+    lastDismissedServerNotifsExpiringBanner?: Date | null,
   |} = Object.freeze({}),
 ): Account => {
   const {
@@ -238,6 +238,7 @@ export const makeAccount = (
     zulipVersion: zulipVersionInner = recentZulipVersion,
     ackedPushToken = null,
     lastDismissedServerPushSetupNotice = null,
+    lastDismissedServerNotifsExpiringBanner = null,
   } = args;
   return deepFreeze({
     realm: realmInner,
@@ -248,6 +249,8 @@ export const makeAccount = (
     zulipVersion: zulipVersionInner,
     ackedPushToken,
     lastDismissedServerPushSetupNotice,
+    lastDismissedServerNotifsExpiringBanner,
+    silenceServerPushSetupWarnings: false,
   });
 };
 
@@ -648,6 +651,8 @@ export const plusReduxState: GlobalState & PerAccountState = reduxState({
       zulipVersion: recentZulipVersion,
       zulipFeatureLevel: recentZulipFeatureLevel,
       lastDismissedServerPushSetupNotice: null,
+      lastDismissedServerNotifsExpiringBanner: null,
+      silenceServerPushSetupWarnings: false,
     },
   ],
   realm: {
@@ -680,7 +685,6 @@ export const plusReduxState: GlobalState & PerAccountState = reduxState({
  */
 export const reduxStatePlus = (
   extra?: $Rest<GlobalState, { ... }>,
-  // $FlowFixMe[not-an-object]
 ): GlobalState & PerAccountState =>
   dubJointState(deepFreeze({ ...(plusReduxState: GlobalState), ...extra }));
 
@@ -737,9 +741,6 @@ export const action = Object.freeze({
       // InitialDataMessage
       max_message_id: 100,
 
-      // InitialDataMutedTopics
-      muted_topics: [],
-
       // InitialDataMutedUsers
       muted_users: [],
 
@@ -768,7 +769,6 @@ export const action = Object.freeze({
       realm_avatar_changes_disabled: false,
       realm_bot_creation_policy: 3,
       realm_bot_domain: 'example.com',
-      realm_community_topic_editing_limit_seconds: 600,
       realm_create_private_stream_policy: 3,
       realm_create_public_stream_policy: 3,
       realm_create_web_public_stream_policy: CreateWebPublicStreamPolicy.ModeratorOrAbove,
@@ -788,7 +788,6 @@ export const action = Object.freeze({
       realm_digest_weekday: 2,
       realm_disallow_disposable_email_addresses: true,
       realm_edit_topic_policy: 3,
-      realm_email_address_visibility: EmailAddressVisibility.Admins,
       realm_email_auth_enabled: true,
       realm_email_changes_disabled: true,
       realm_emails_restricted_to_domains: false,
@@ -822,6 +821,7 @@ export const action = Object.freeze({
       realm_presence_disabled: true,
       realm_private_message_policy: 3,
       realm_push_notifications_enabled: true,
+      realm_push_notifications_enabled_end_timestamp: 1704926069,
       realm_send_welcome_emails: true,
       realm_signup_notifications_stream_id: 3,
       realm_upload_quota_mib: 10,
@@ -864,10 +864,7 @@ export const action = Object.freeze({
       can_create_web_public_streams: false,
       can_subscribe_other_users: false,
       can_invite_others_to_realm: false,
-
-      // $FlowIgnore[cannot-read]: Faithfully representing what servers send
-      is_admin: selfUser.is_admin,
-
+      is_admin: false,
       is_owner: false,
       is_billing_admin: selfUser.is_billing_admin,
       is_moderator: false,
@@ -950,6 +947,9 @@ export const action = Object.freeze({
 
       // InitialDataUserStatus
       user_status: {},
+
+      // InitialDataUserTopic
+      user_topics: [],
     },
   }): RegisterCompleteAction),
 
@@ -1077,11 +1077,10 @@ export const baseBackgroundData: BackgroundData = deepFreeze(
       users: [selfUser],
     }),
     getGlobalSettings(baseReduxState),
-    getDebug(baseReduxState),
   ),
 );
 
 /** A BackgroundData value corresponding to plusReduxState. */
 export const plusBackgroundData: BackgroundData = deepFreeze(
-  getBackgroundData(plusReduxState, getGlobalSettings(plusReduxState), getDebug(plusReduxState)),
+  getBackgroundData(plusReduxState, getGlobalSettings(plusReduxState)),
 );

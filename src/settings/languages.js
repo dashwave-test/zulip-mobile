@@ -1,8 +1,8 @@
 /* @flow strict-local */
-import messages from '../i18n/messages';
+import messagesByLanguage from '../i18n/messagesByLanguage';
 
 export type Language = {|
-  tag: $Keys<typeof messages>,
+  tag: $Keys<typeof messagesByLanguage>,
   name: string,
   selfname: string,
 |};
@@ -52,6 +52,7 @@ const languages: $ReadOnlyArray<Language> = [
   { tag: 'fr', name: 'French', selfname: 'Français' },
   { tag: 'gl', name: 'Galician', selfname: 'Galego' },
   { tag: 'it', name: 'Italian', selfname: 'Italiano' },
+  { tag: 'lv', name: 'Latvian', selfname: 'Latviešu' },
   { tag: 'lt', name: 'Lithuanian', selfname: 'Lietuvių' },
   { tag: 'hu', name: 'Hungarian', selfname: 'Magyar' },
   { tag: 'nl', name: 'Dutch', selfname: 'Nederlands' },
@@ -65,16 +66,20 @@ const languages: $ReadOnlyArray<Language> = [
   { tag: 'ro', name: 'Romanian', selfname: 'Română' },
   { tag: 'fi', name: 'Finnish', selfname: 'Suomi' },
   { tag: 'sv', name: 'Swedish', selfname: 'Svenska' },
+  { tag: 'tl', name: 'Tagalog', selfname: 'Tagalog' },
   { tag: 'vi', name: 'Vietnamese', selfname: 'Tiếng Việt' },
   { tag: 'tr', name: 'Turkish', selfname: 'Türkçe' },
+  { tag: 'be', name: 'Belarusian', selfname: 'беларуская' },
   { tag: 'bg', name: 'Bulgarian', selfname: 'Български' },
   { tag: 'mn', name: 'Mongolian', selfname: 'Монгол' },
   { tag: 'ru', name: 'Russian', selfname: 'Русский' },
   { tag: 'sr', name: 'Serbian', selfname: 'Српски' },
   { tag: 'uk', name: 'Ukrainian', selfname: 'Українська' },
   { tag: 'ar', name: 'Arabic', selfname: 'العربية' },
+  { tag: 'bqi', name: 'Luri (Bakhtiari)', selfname: 'لوری (بختیاری)' },
   { tag: 'fa', name: 'Persian', selfname: 'فارسی' },
   { tag: 'hi', name: 'Hindi', selfname: 'हिन्दी' },
+  { tag: 'gu', name: 'Gujarati', selfname: 'ગુજરાતી' },
   { tag: 'ta', name: 'Tamil', selfname: 'தமிழ்' },
   { tag: 'ml', name: 'Malayalam', selfname: 'മലയാളം' },
   { tag: 'si', name: 'Sinhala', selfname: 'සිංහල' },

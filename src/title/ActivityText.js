@@ -6,9 +6,7 @@ import type { TextStyleProp } from 'react-native/Libraries/StyleSheet/StyleSheet
 
 import type { UserOrBot } from '../types';
 import { useSelector } from '../react-redux';
-import { getPresence, getZulipFeatureLevel } from '../selectors';
-import { getUserStatus } from '../user-statuses/userStatusesModel';
-import { presenceToHumanTime } from '../utils/presence';
+import { getUserLastActiveAsRelativeTimeString } from '../presence/presenceModel';
 import ZulipText from '../common/ZulipText';
 
 type Props = $ReadOnly<{|
@@ -17,17 +15,14 @@ type Props = $ReadOnly<{|
 |}>;
 
 export default function ActivityText(props: Props): Node {
-  const { style } = props;
+  const { style, user } = props;
 
-  const zulipFeatureLevel = useSelector(getZulipFeatureLevel);
-  const presence = useSelector(state => getPresence(state)[props.user.email]);
-  const userStatus = useSelector(state => getUserStatus(state, props.user.user_id));
-
-  if (!presence) {
+  const activeTime = useSelector(state =>
+    getUserLastActiveAsRelativeTimeString(state, user, Date.now()),
+  );
+  if (activeTime == null) {
     return null;
   }
 
-  const activity = presenceToHumanTime(presence, userStatus, zulipFeatureLevel);
-
-  return <ZulipText style={style} text={`Active ${activity}`} />;
+  return <ZulipText style={style} text={`Active ${activeTime}`} />;
 }

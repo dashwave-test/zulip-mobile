@@ -15,14 +15,12 @@ import type {
   MutedUsersState,
   NarrowsState,
   TopicsState,
-  PresenceState,
   CrossRealmBot,
   RealmEmojiById,
   RealmState,
   PerAccountSettingsState,
   GlobalSettingsState,
   TypingState,
-  Debug,
   VideoChatProvider,
   User,
 } from './types';
@@ -34,7 +32,6 @@ export const getSession = (state: PerAccountState): PerAccountSessionState => st
 export const getGlobalSession = (state: GlobalState): GlobalSessionState => state.session;
 
 export const getIsOnline = (state: GlobalState): boolean | null => state.session.isOnline;
-export const getDebug = (state: GlobalState): Debug => state.session.debug;
 export const getIsHydrated = (state: GlobalState): boolean => state.session.isHydrated;
 
 export const getCanCreateStreams = (state: PerAccountState): boolean =>
@@ -79,8 +76,6 @@ export const getSubscriptions = (state: PerAccountState): SubscriptionsState => 
  * or `getStreamsById` instead.
  */
 export const getStreams = (state: PerAccountState): StreamsState => state.streams;
-
-export const getPresence = (state: PerAccountState): PresenceState => state.presence;
 
 export const getOutbox = (state: PerAccountState): OutboxState => state.outbox;
 

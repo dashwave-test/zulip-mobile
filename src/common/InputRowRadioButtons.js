@@ -14,6 +14,7 @@ import ZulipTextIntl from './ZulipTextIntl';
 import { IconRight } from './Icons';
 import type { AppNavigationMethods } from '../nav/AppNavigator';
 import { ThemeContext } from '../styles/theme';
+import type { SpecificIconType } from './Icons';
 
 type Item<TKey> = $ReadOnly<{|
   key: TKey,
@@ -32,6 +33,11 @@ type Item<TKey> = $ReadOnly<{|
 |}>;
 
 type Props<TItemKey> = $ReadOnly<{|
+  icon?: {|
+    +Component: SpecificIconType,
+    +color?: string,
+  |},
+
   /**
    * Component must be under the stack nav with the selectable-options screen.
    *
@@ -55,6 +61,13 @@ type Props<TItemKey> = $ReadOnly<{|
   items: $ReadOnlyArray<Item<TItemKey>>,
 
   onValueChange: (newValue: TItemKey) => void,
+
+  /**
+   * Whether to offer a search bar at the top for filtering.
+   *
+   * The query is checked against items' `title` and `subtitle`.
+   */
+  search?: boolean,
 |}>;
 
 /**
@@ -64,14 +77,14 @@ type Props<TItemKey> = $ReadOnly<{|
  * `.title`. When tapped, opens the selectable-options screen, where the
  * user can change the selection or read more about each selection.
  */
-// This has the navigate-to-nested-screen semantics of NestedNavRow,
-// represented by IconRight. NestedNavRow would probably be the wrong
-// abstraction, though, because it isn't an imput component; it doesn't have
-// a value to display.
+// This has the navigate-to-nested-screen semantics of
+// <NavRow type="nested" … />, represented by IconRight. NavRow would
+// probably be the wrong abstraction, though, because it isn't an input
+// component; it doesn't have a value to display.
 export default function InputRowRadioButtons<TItemKey: string | number>(
   props: Props<TItemKey>,
 ): Node {
-  const { navigation, label, description, valueKey, items, onValueChange } = props;
+  const { navigation, label, description, valueKey, items, onValueChange, search, icon } = props;
 
   const screenKey: string = useRef(`selectable-options-${randString()}`).current;
 
@@ -97,8 +110,9 @@ export default function InputRowRadioButtons<TItemKey: string | number>(
         navigation.goBack();
         onValueChange(itemKey);
       },
+      search,
     }),
-    [navigation, label, description, items, valueKey, onValueChange],
+    [navigation, label, description, items, valueKey, onValueChange, search],
   );
 
   const handleRowPressed = useCallback(() => {
@@ -145,6 +159,11 @@ export default function InputRowRadioButtons<TItemKey: string | number>(
           //   https://material.io/design/usability/accessibility.html#layout-and-typography
           minHeight: 48,
         },
+        iconFromProps: {
+          textAlign: 'center',
+          marginRight: 8,
+          color: icon?.color ?? themeData.color,
+        },
         textWrapper: {
           flex: 1,
           flexDirection: 'column',
@@ -161,12 +180,13 @@ export default function InputRowRadioButtons<TItemKey: string | number>(
           width: kRightArrowIconSize,
         },
       }),
-    [],
+    [themeData, icon],
   );
 
   return (
     <Touchable onPress={handleRowPressed}>
       <View style={styles.wrapper}>
+        {!!icon && <icon.Component size={24} style={styles.iconFromProps} />}
         <View style={styles.textWrapper}>
           <ZulipTextIntl text={label} />
           <ZulipTextIntl text={selectedItem.title} style={styles.valueTitle} />

@@ -134,7 +134,8 @@ const migrationsInner: {| [string]: (LessPartialState) => LessPartialState |} = 
   '10': state => {
     const newLocaleNames = { zh: 'zh-Hans', id: 'id-ID' };
     // $FlowIgnore[prop-missing]: `locale` renamed to `language` in 31
-    const { locale } = state.settings;
+    // $FlowIgnore[incompatible-type]: `locale` renamed to `language` in 31
+    const locale: string = state.settings.locale;
     const newLocale = newLocaleNames[locale] ?? locale;
     // $FlowIgnore[prop-missing]
     return {
@@ -244,7 +245,8 @@ const migrationsInner: {| [string]: (LessPartialState) => LessPartialState |} = 
   // Rename locale `id-ID` back to `id`.
   '26': state => {
     // $FlowIgnore[prop-missing]: `locale` renamed to `language` in 31
-    const { locale } = state.settings;
+    // $FlowIgnore[incompatible-type]: `locale` renamed to `language` in 31
+    const locale: string = state.settings.locale;
     const newLocale = locale === 'id-ID' ? 'id' : locale;
     // $FlowIgnore[prop-missing]
     return {
@@ -299,12 +301,13 @@ const migrationsInner: {| [string]: (LessPartialState) => LessPartialState |} = 
   // Rename to `state.settings.language` from `state.settings.locale`.
   '31': state => {
     // $FlowIgnore[prop-missing]: migration fudge
-    const { locale: language, ...settingsRest } = state.settings;
+    const { locale, ...settingsRest } = state.settings;
     return {
       ...state,
       settings: {
         ...settingsRest,
-        language,
+        // $FlowIgnore[incompatible-cast] - is string when migration runs
+        language: (locale: string),
       },
     };
   },
@@ -455,7 +458,11 @@ const migrationsInner: {| [string]: (LessPartialState) => LessPartialState |} = 
       ...state,
       settings: {
         ...restSettings,
-        markMessagesReadOnScroll: (doNotMarkMessagesAsRead: boolean) ? 'never' : 'always',
+        markMessagesReadOnScroll:
+          // $FlowIgnore[incompatible-cast] - is boolean when migration runs
+          (doNotMarkMessagesAsRead: boolean)
+            ? 'never' // newline to narrow FlowIgnore's scope, above
+            : 'always',
       },
     };
   },
@@ -500,6 +507,38 @@ const migrationsInner: {| [string]: (LessPartialState) => LessPartialState |} = 
         Object.prototype.hasOwnProperty.call(account, key),
       ),
     ),
+  }),
+
+  // Change `state.mute` data structure: was a plain JS Map.
+  '59': dropCache,
+
+  // Changed `state.presence` (twice), but no migration because that's in `discardKeys`.
+
+  // Discard invalid enum values from `state.mute`.
+  '60': dropCache,
+
+  // Fix emailAddressVisibility accidentally being undefined/dropped
+  '61': dropCache,
+
+  // Add silenceServerPushSetupWarnings to accounts.
+  '62': state => ({
+    ...state,
+    accounts: state.accounts.map(a => ({ ...a, silenceServerPushSetupWarnings: false })),
+  }),
+
+  // Made UserOrBot.role required; removed is_owner, is_admin, is_guest
+  '63': dropCache,
+
+  // Add enableGuestUserIndicator to state.realm
+  '64': dropCache,
+
+  // Add pushNotificationsEnabledEndTimestamp to state.realm
+  '65': dropCache,
+
+  // Add `accounts[].lastDismissedServerNotifsExpiringBanner`, as Date | null.
+  '66': state => ({
+    ...state,
+    accounts: state.accounts.map(a => ({ ...a, lastDismissedServerNotifsExpiringBanner: null })),
   }),
 
   // TIP: When adding a migration, consider just using `dropCache`.

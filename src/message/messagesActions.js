@@ -3,7 +3,11 @@ import * as logging from '../utils/logging';
 import * as NavigationService from '../nav/NavigationService';
 import type { GetText, Message, Narrow, ThunkAction } from '../types';
 import { getAuth, getRealm, getMessages, getZulipFeatureLevel } from '../selectors';
-import { getNearOperandFromLink, getNarrowFromLink } from '../utils/internalLinks';
+import {
+  getNearOperandFromLink,
+  getNarrowFromNarrowLink,
+  isNarrowLink,
+} from '../utils/internalLinks';
 import { openLinkWithUserPreference } from '../utils/openLink';
 import { navigateToChat } from '../nav/navActions';
 import { FIRST_UNREAD_ANCHOR } from '../anchor';
@@ -19,9 +23,11 @@ import {
   topicOfNarrow,
   streamNarrow,
   caseNarrowDefault,
+  isConversationNarrow,
 } from '../utils/narrow';
 import { hasMessageEverBeenInStream, hasMessageEverHadTopic } from './messageSelectors';
 import { showErrorAlert } from '../utils/info';
+import { isNarrowValid } from '../chat/narrowsSelectors';
 
 /**
  * Navigate to the given narrow.
@@ -223,24 +229,48 @@ export const messageLinkPress =
     const streamsById = getStreamsById(state);
     const streamsByName = getStreamsByName(state);
     const ownUserId = getOwnUserId(state);
+    const globalSettings = getGlobalSettings();
 
     const parsedUrl = tryParseUrl(href, auth.realm);
     if (!parsedUrl) {
       showErrorAlert(_('Cannot open link'), _('Invalid URL.'));
       return;
     }
-    // TODO: Replace all uses of `href` below with `parsedUrl`.
 
-    const narrow = getNarrowFromLink(parsedUrl, auth.realm, streamsById, streamsByName, ownUserId);
+    if (isNarrowLink(parsedUrl, auth.realm)) {
+      const narrow = getNarrowFromNarrowLink(
+        parsedUrl,
+        auth.realm,
+        streamsById,
+        streamsByName,
+        ownUserId,
+      );
 
-    // TODO: In some cases getNarrowFromLink successfully parses the link, but
-    //   finds it points somewhere we can't see: in particular, to a stream
-    //   that's hidden from our user (perhaps doesn't exist.)  For those,
-    //   perhaps give an error instead of falling back to opening in browser,
-    //   which should be futile.
-    if (narrow) {
-      // This call is OK: `narrow` is truthy, so isNarrowLink(…) was true.
+      if (!narrow) {
+        // Open mobile web, because it could be a valid narrow link that web
+        // can handle but mobile can't; our Narrow type can't represent it.
+        //
+        // …Could also be an invalid narrow link, or one that we *could*
+        // parse but just haven't (e.g., operands in an unexpected order).
+        // Opening the browser won't be ideal in those cases.
+        openLinkWithUserPreference(parsedUrl, globalSettings);
+        return;
+      }
+
       const nearOperand = getNearOperandFromLink(parsedUrl, auth.realm);
+
+      if (!isNarrowValid(state, narrow)) {
+        // E.g., a stream that's hidden from our user (perhaps doesn't exist).
+        const msg =
+          nearOperand !== null
+            ? 'That message could not be found.'
+            : isConversationNarrow(narrow)
+            ? 'That conversation could not be found.'
+            : 'Those messages could not be found.';
+        showErrorAlert(_('Cannot open link'), _(msg));
+        return;
+      }
+
       if (nearOperand === null) {
         dispatch(doNarrow(narrow));
         return;
@@ -248,9 +278,9 @@ export const messageLinkPress =
 
       await dispatch(doNarrowNearLink(narrow, nearOperand));
     } else if (!isUrlOnRealm(parsedUrl, auth.realm)) {
-      openLinkWithUserPreference(parsedUrl, getGlobalSettings());
+      openLinkWithUserPreference(parsedUrl, globalSettings);
     } else {
       const url = (await api.tryGetFileTemporaryUrl(parsedUrl, auth)) ?? parsedUrl;
-      openLinkWithUserPreference(url, getGlobalSettings());
+      openLinkWithUserPreference(url, globalSettings);
     }
   };

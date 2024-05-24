@@ -147,6 +147,10 @@ run_only()
     # TODO get list of packages from data... better yet, make it
     #   one tsflower command, reading a TsFlower config file
 
+    package=expo-mail-composer
+    run_on_package "${package}"
+    format_dir "${rootdir}"/types/"${package}"
+
     package=@react-native-clipboard/clipboard
     run_on_package "${package}"
     format_dir "${rootdir}"/types/"${package}"
@@ -205,9 +209,11 @@ run_only()
     rm -rf "${rootdir}"/types/"${package}"/lib/typescript/example/
     format_dir "${rootdir}"/types/"${package}"
 
-    # Remove all *.web.js.flow files. We don't use RN for the web.
+    # Remove all *.web.js.flow files, etc. We don't use RN on those platforms.
     # TODO(tsflower): When tsflower supports skipping files, simplify away.
     rm -f "${rootdir}"/types/**/*.web.js.flow
+    rm -f "${rootdir}"/types/**/*.macos.js.flow
+    rm -f "${rootdir}"/types/**/*.windows.js.flow
 }
 
 apply_patches()

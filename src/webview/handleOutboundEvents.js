@@ -6,13 +6,13 @@ import * as api from '../api';
 import config from '../config';
 import type { UserId } from '../types';
 import type { JSONableDict } from '../utils/jsonable';
-import { showErrorAlert, showToast } from '../utils/info';
+import { showConfirmationDialog, showErrorAlert, showToast } from '../utils/info';
 import { pmKeyRecipientsFromMessage } from '../utils/recipient';
 import { isUrlAnImage, tryParseUrl } from '../utils/url';
 import * as logging from '../utils/logging';
 import { filterUnreadMessagesInRange } from '../utils/unread';
 import { parseNarrow } from '../utils/narrow';
-import { fetchOlder, fetchNewer, doNarrow, messageLinkPress } from '../actions';
+import { doNarrow, messageLinkPress } from '../actions';
 import {
   showTopicActionSheet,
   showPmConversationActionSheet,
@@ -153,12 +153,11 @@ export type WebViewOutboundEvent =
 
 const fetchMore = (props: Props, event: WebViewOutboundEventScroll) => {
   const { innerHeight, offsetHeight, scrollY } = event;
-  const { dispatch, narrow } = props;
   if (scrollY < config.messageListThreshold) {
-    dispatch(fetchOlder(narrow));
+    props.fetchOlder();
   }
   if (innerHeight + scrollY >= offsetHeight - config.messageListThreshold) {
-    dispatch(fetchNewer(narrow));
+    props.fetchNewer();
   }
 };
 
@@ -207,11 +206,26 @@ const handleLongPress = (args: {|
   navigation: AppNavigationMethods,
 |}) => {
   const { props, target, messageId, href, navigation } = args;
+  const { _ } = props;
 
   if (href !== null) {
-    const url = new URL(href, props.backgroundData.auth.realm).toString();
-    Clipboard.setString(url);
-    const { _ } = props;
+    const url = tryParseUrl(href, props.backgroundData.auth.realm);
+    if (url == null) {
+      showConfirmationDialog({
+        title: 'Copy invalid link',
+        message: {
+          text: 'This link appears to be invalid. Do you want to copy it anyway?\n\n{text}',
+          values: { text: href },
+        },
+        onPressConfirm: () => {
+          Clipboard.setString(href);
+          showToast(_('Text copied'));
+        },
+        _,
+      });
+      return;
+    }
+    Clipboard.setString(url.toString());
     showToast(_('Link copied'));
     return;
   }
@@ -228,7 +242,6 @@ const handleLongPress = (args: {|
     startEditMessage,
     setDoNotMarkMessagesAsRead,
     composeBoxRef,
-    _,
   } = props;
   if (target === 'header') {
     if (message.type === 'stream') {

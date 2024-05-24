@@ -13,6 +13,7 @@ import {
   makePmKeyRecipients_UNSAFE,
 } from './recipient';
 import type { UserMessageFlag } from '../api/modelTypes';
+import { ensureUnreachable } from '../generics';
 
 /* eslint-disable no-use-before-define */
 
@@ -123,17 +124,18 @@ export const pmNarrowFromUsersUnsafe = (recipients: $ReadOnlyArray<UserOrBot>): 
 export const pm1to1NarrowFromUser = (user: UserOrBot): Narrow =>
   pmNarrowInternal(pmKeyRecipientsFor1to1(user.user_id));
 
-export const specialNarrow = (operand: string): Narrow => {
-  if (operand === 'starred') {
-    return Object.freeze({ type: 'starred' });
+export const specialNarrow = (operand: 'starred' | 'mentioned' | 'dm'): Narrow => {
+  switch (operand) {
+    case 'starred':
+      return Object.freeze({ type: 'starred' });
+    case 'mentioned':
+      return Object.freeze({ type: 'mentioned' });
+    case 'dm':
+      return Object.freeze({ type: 'all-pm' });
+    default:
+      ensureUnreachable(operand);
+      throw new Error();
   }
-  if (operand === 'mentioned') {
-    return Object.freeze({ type: 'mentioned' });
-  }
-  if (operand === 'private') {
-    return Object.freeze({ type: 'all-pm' });
-  }
-  throw new Error(`specialNarrow: got unsupported operand: ${operand}`);
 };
 
 export const STARRED_NARROW: Narrow = specialNarrow('starred');
@@ -144,7 +146,7 @@ export const MENTIONED_NARROW: Narrow = specialNarrow('mentioned');
 
 export const MENTIONED_NARROW_STR: string = keyFromNarrow(MENTIONED_NARROW);
 
-export const ALL_PRIVATE_NARROW: Narrow = specialNarrow('private');
+export const ALL_PRIVATE_NARROW: Narrow = specialNarrow('dm');
 
 export const ALL_PRIVATE_NARROW_STR: string = keyFromNarrow(ALL_PRIVATE_NARROW);
 
@@ -435,6 +437,7 @@ export const apiNarrowOfNarrow = (
     ],
     pm: ids => {
       const emails = ids.map(id => get('user', allUsersById, id).email);
+      // TODO(server-7.0): send `dm` rather than `pm-with`
       // TODO(server-2.1): just send IDs instead
       return [{ operator: 'pm-with', operand: emails.join(',') }];
     },
@@ -442,6 +445,8 @@ export const apiNarrowOfNarrow = (
     home: () => [],
     starred: () => [{ operator: 'is', operand: 'starred' }],
     mentioned: () => [{ operator: 'is', operand: 'mentioned' }],
+
+    // TODO(server-7.0): send `is:dm` rather than `is:private`
     allPrivate: () => [{ operator: 'is', operand: 'private' }],
   });
 };

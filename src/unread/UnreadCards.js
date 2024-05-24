@@ -11,14 +11,13 @@ import PmConversationList from '../pm-conversations/PmConversationList';
 import StreamItem from '../streams/StreamItem';
 import TopicItem from '../streams/TopicItem';
 import { streamNarrow, topicNarrow } from '../utils/narrow';
-import { getUnreadConversations, getUnreadStreamsAndTopicsSansMuted } from '../selectors';
+import { getUnreadConversations, getUnreadStreamsAndTopics } from '../selectors';
 import { doNarrow } from '../actions';
 
 /**
  * An item in the data prepared for this UI by its helper selectors.
  *
- * See `getUnreadStreamsAndTopicsSansMuted`, and its helper
- * `getUnreadStreamsAndTopics`.
+ * See `getUnreadStreamsAndTopics`.
  *
  * The exact collection of data included here is just an assortment of what
  * the UI in this file happens to need.
@@ -29,7 +28,6 @@ export type UnreadStreamItem = {|
   streamName: string,
   unread: number,
   color: string,
-  isMuted: boolean,
   isPinned: boolean,
   isPrivate: boolean,
   isWebPublic: boolean | void,
@@ -38,7 +36,6 @@ export type UnreadStreamItem = {|
     topic: string,
     isMentioned: boolean,
     unread: number,
-    isMuted: boolean,
     lastUnreadMsgId: number,
   |}>,
 |};
@@ -48,7 +45,7 @@ type Props = $ReadOnly<{||}>;
 export default function UnreadCards(props: Props): Node {
   const dispatch = useDispatch();
   const conversations = useSelector(getUnreadConversations);
-  const unreadStreamsAndTopics = useSelector(getUnreadStreamsAndTopicsSansMuted);
+  const unreadStreamsAndTopics = useSelector(getUnreadStreamsAndTopics);
 
   const [collapsedStreamIds, setCollapsedStreamIds] = useState(Immutable.Set<number>());
 
@@ -91,11 +88,12 @@ export default function UnreadCards(props: Props): Node {
             iconSize={16}
             isCollapsed={collapsedStreamIds.has(section.streamId)}
             handleExpandCollapse={handleExpandCollapse}
-            isMuted={section.isMuted}
+            isMuted={false}
             isPrivate={section.isPrivate}
             isWebPublic={section.isWebPublic}
             backgroundColor={section.color}
             unreadCount={section.unread}
+            extraPaddingEnd={20}
             onPress={stream => {
               setTimeout(() => dispatch(doNarrow(streamNarrow(stream.stream_id))));
             }}
@@ -104,12 +102,12 @@ export default function UnreadCards(props: Props): Node {
       }
       renderItem={({ item, section }) =>
         section.key === 'private' ? (
-          <PmConversationList {...item} />
+          <PmConversationList extraPaddingEnd={20} {...item} />
         ) : (
           <TopicItem
             streamId={section.streamId}
             name={item.topic}
-            isMuted={section.isMuted || item.isMuted}
+            isMuted={false}
             isSelected={false}
             unreadCount={item.unread}
             isMentioned={item.isMentioned}

@@ -21,6 +21,7 @@ import type {
   Stream,
   LocalizableText,
 } from '../types';
+import { UserTopicVisibilityPolicy } from '../api/modelTypes';
 import type { UnreadState } from '../unread/unreadModelTypes';
 import {
   apiNarrowOfNarrow,
@@ -31,7 +32,7 @@ import {
 } from '../utils/narrow';
 import { pmUiRecipientsFromKeyRecipients } from '../utils/recipient';
 import type { PmKeyRecipients } from '../utils/recipient';
-import { isTopicMuted } from '../mute/muteModel';
+import { getTopicVisibilityPolicy } from '../mute/muteModel';
 import * as api from '../api';
 import { showConfirmationDialog, showErrorAlert, showToast } from '../utils/info';
 import { doNarrow, deleteOutboxMessage, fetchSomeMessageIdForConversation } from '../actions';
@@ -46,6 +47,7 @@ import { roleIsAtLeast } from '../permissionSelectors';
 import { kNotificationBotEmail } from '../api/constants';
 import type { AppNavigationMethods } from '../nav/AppNavigator';
 import { type ImperativeHandle as ComposeBoxImperativeHandle } from '../compose/ComposeBox';
+import { getFullNameText } from '../users/userSelectors';
 
 // TODO really this belongs in a libdef.
 export type ShowActionSheetWithOptions = (
@@ -277,25 +279,62 @@ const markAsUnreadFromMessage = {
   },
 };
 
+const unmuteTopicInMutedStream = {
+  title: 'Unmute topic',
+  errorMessage: 'Failed to unmute topic',
+  action: async ({ auth, streamId, topic, streams, zulipFeatureLevel }) => {
+    invariant(zulipFeatureLevel >= 170, 'Should only attempt to unmute in muted stream on FL 170+');
+    await api.updateUserTopic(auth, streamId, topic, UserTopicVisibilityPolicy.Unmuted);
+  },
+};
+
 const unmuteTopic = {
   title: 'Unmute topic',
   errorMessage: 'Failed to unmute topic',
-  action: async ({ auth, streamId, topic, streams }) => {
-    const stream = streams.get(streamId);
-    invariant(stream !== undefined, 'Stream with provided streamId must exist.');
-    // This still uses a stream name (#3918) because the API method does; see there.
-    await api.setTopicMute(auth, stream.name, topic, false);
+  action: async ({ auth, streamId, topic, streams, zulipFeatureLevel }) => {
+    if (zulipFeatureLevel >= 170) {
+      await api.updateUserTopic(auth, streamId, topic, UserTopicVisibilityPolicy.None);
+    } else {
+      // TODO(server-7.0): Cut this fallback to setTopicMute.
+      const stream = streams.get(streamId);
+      invariant(stream !== undefined, 'Stream with provided streamId must exist.');
+      // This still uses a stream name (#3918) because the API method does; see there.
+      await api.setTopicMute(auth, stream.name, topic, false);
+    }
   },
 };
 
 const muteTopic = {
   title: 'Mute topic',
   errorMessage: 'Failed to mute topic',
-  action: async ({ auth, streamId, topic, streams }) => {
-    const stream = streams.get(streamId);
-    invariant(stream !== undefined, 'Stream with provided streamId must exist.');
-    // This still uses a stream name (#3918) because the API method does; see there.
-    await api.setTopicMute(auth, stream.name, topic, true);
+  action: async ({ auth, streamId, topic, streams, zulipFeatureLevel }) => {
+    if (zulipFeatureLevel >= 170) {
+      await api.updateUserTopic(auth, streamId, topic, UserTopicVisibilityPolicy.Muted);
+    } else {
+      // TODO(server-7.0): Cut this fallback to setTopicMute.
+      const stream = streams.get(streamId);
+      invariant(stream !== undefined, 'Stream with provided streamId must exist.');
+      // This still uses a stream name (#3918) because the API method does; see there.
+      await api.setTopicMute(auth, stream.name, topic, true);
+    }
+  },
+};
+
+const followTopic = {
+  title: 'Follow topic',
+  errorMessage: 'Failed to follow topic',
+  action: async ({ auth, streamId, topic, zulipFeatureLevel }) => {
+    invariant(zulipFeatureLevel >= 219, 'Should only attempt to follow topic on FL 219+');
+    await api.updateUserTopic(auth, streamId, topic, UserTopicVisibilityPolicy.Followed);
+  },
+};
+
+const unfollowTopic = {
+  title: 'Unfollow topic',
+  errorMessage: 'Failed to unfollow topic',
+  action: async ({ auth, streamId, topic, zulipFeatureLevel }) => {
+    invariant(zulipFeatureLevel >= 219, 'Should only attempt to unfollow topic on FL 219+');
+    await api.updateUserTopic(auth, streamId, topic, UserTopicVisibilityPolicy.None);
   },
 };
 
@@ -620,23 +659,77 @@ export const constructTopicActionButtons = (args: {|
     ownUserRole: Role,
     subscriptions: Map<number, Subscription>,
     unread: UnreadState,
+    zulipFeatureLevel: number,
     ...
   }>,
   streamId: number,
   topic: string,
 |}): Button<TopicArgs>[] => {
   const { backgroundData, streamId, topic } = args;
-  const { mute, ownUserRole, subscriptions, unread } = backgroundData;
+  const { mute, ownUserRole, subscriptions, unread, zulipFeatureLevel } = backgroundData;
+  const sub = subscriptions.get(streamId);
+  const streamMuted = !!sub && !sub.in_home_view;
+
+  // TODO(server-7.0): Simplify this condition away.
+  const supportsUnmutingTopics = zulipFeatureLevel >= 170;
+  // TODO(server-8.0): Simplify this condition away.
+  const supportsFollowingTopics = zulipFeatureLevel >= 219;
 
   const buttons = [];
   const unreadCount = getUnreadCountForTopic(unread, streamId, topic);
   if (unreadCount > 0) {
     buttons.push(markTopicAsRead);
   }
-  if (isTopicMuted(streamId, topic, mute)) {
-    buttons.push(unmuteTopic);
+  if (sub && !streamMuted) {
+    // Stream subscribed and not muted.
+    switch (getTopicVisibilityPolicy(mute, streamId, topic)) {
+      case UserTopicVisibilityPolicy.Muted:
+        buttons.push(unmuteTopic);
+        if (supportsFollowingTopics) {
+          buttons.push(followTopic);
+        }
+        break;
+      case UserTopicVisibilityPolicy.None:
+      case UserTopicVisibilityPolicy.Unmuted:
+        buttons.push(muteTopic);
+        if (supportsFollowingTopics) {
+          buttons.push(followTopic);
+        }
+        break;
+      case UserTopicVisibilityPolicy.Followed:
+        buttons.push(muteTopic);
+        if (supportsFollowingTopics) {
+          buttons.push(unfollowTopic);
+        }
+        break;
+    }
+  } else if (sub && streamMuted) {
+    // Muted stream.
+    if (supportsUnmutingTopics) {
+      switch (getTopicVisibilityPolicy(mute, streamId, topic)) {
+        case UserTopicVisibilityPolicy.None:
+        case UserTopicVisibilityPolicy.Muted:
+          buttons.push(unmuteTopicInMutedStream);
+          if (supportsFollowingTopics) {
+            buttons.push(followTopic);
+          }
+          break;
+        case UserTopicVisibilityPolicy.Unmuted:
+          buttons.push(muteTopic);
+          if (supportsFollowingTopics) {
+            buttons.push(followTopic);
+          }
+          break;
+        case UserTopicVisibilityPolicy.Followed:
+          buttons.push(muteTopic);
+          if (supportsFollowingTopics) {
+            buttons.push(unfollowTopic);
+          }
+          break;
+      }
+    }
   } else {
-    buttons.push(muteTopic);
+    // Not subscribed to stream at all; no muting.
   }
   if (!resolved_topic.is_resolved(topic)) {
     buttons.push(resolveTopic);
@@ -646,11 +739,12 @@ export const constructTopicActionButtons = (args: {|
   if (roleIsAtLeast(ownUserRole, Role.Admin)) {
     buttons.push(deleteTopic);
   }
-  const sub = subscriptions.get(streamId);
-  if (sub && !sub.in_home_view) {
+  if (sub && streamMuted) {
     buttons.push(unmuteStream);
-  } else {
+  } else if (sub && !streamMuted) {
     buttons.push(muteStream);
+  } else {
+    // Not subscribed to stream at all; no muting.
   }
   buttons.push(copyLinkToTopic);
   buttons.push(showStreamSettings);
@@ -905,10 +999,16 @@ export const showPmConversationActionSheet = (args: {|
     navigation: AppNavigationMethods,
     _: GetText,
   |},
-  backgroundData: $ReadOnly<{ ownUser: User, allUsersById: Map<UserId, UserOrBot>, ... }>,
+  backgroundData: $ReadOnly<{
+    ownUser: User,
+    allUsersById: Map<UserId, UserOrBot>,
+    enableGuestUserIndicator: boolean,
+    ...
+  }>,
   pmKeyRecipients: PmKeyRecipients,
 |}): void => {
   const { showActionSheetWithOptions, callbacks, backgroundData, pmKeyRecipients } = args;
+  const { enableGuestUserIndicator } = backgroundData;
   showActionSheet({
     showActionSheetWithOptions,
     // TODO(ios-14.5): Check for Intl.ListFormat support in all environments
@@ -918,7 +1018,7 @@ export const showPmConversationActionSheet = (args: {|
       .map(userId => {
         const user = backgroundData.allUsersById.get(userId);
         invariant(user, 'allUsersById incomplete; could not show PM action sheet');
-        return user.full_name;
+        return callbacks._(getFullNameText({ user, enableGuestUserIndicator }));
       })
       .sort()
       .join(', '),

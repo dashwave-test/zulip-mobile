@@ -79,7 +79,7 @@ apply plugin: "kotlin-android-extensions"
 project.ext.react = [
         enableHermes      : false, // clean and rebuild if changing
         // quasi-unstable: see commits 8f8a266af and 833d083a9
-        jsBundleDirRelease: "$buildDir/intermediates/merged_assets/release/out"
+        jsBundleDirRelease: "$buildDir/intermediates/assets/release/mergeReleaseAssets"
 ]
 
 apply from: "../../node_modules/react-native/react.gradle"
@@ -147,8 +147,8 @@ android {
         applicationId "com.zulipmobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 200
-        versionName "27.200"
+        versionCode 228
+        versionName "27.228"
     }
     signingConfigs {
         // The RN v0.60 template app suggests configuring a debug
@@ -199,6 +199,14 @@ android {
     sourceSets.main {
         assets.srcDirs += file("../../static/assets")
     }
+}
+
+// Disable all Sentry's native code.  This doesn't seem to impair
+// Sentry's reporting of JVM or JS exceptions.  Suggested by
+// upstream:
+//   https://github.com/getsentry/sentry-java/issues/2955#issuecomment-1765732363
+configurations.configureEach {
+  exclude group: "io.sentry", module: "sentry-android-ndk"
 }
 
 repositories {

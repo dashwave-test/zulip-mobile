@@ -3,7 +3,6 @@
 import type {
   AlertWordsState,
   Auth,
-  Debug,
   FlagsState,
   GlobalSettingsState,
   ImageEmoji,
@@ -35,7 +34,6 @@ import { getUnread } from '../unread/unreadModel';
 import { getUserStatuses } from '../user-statuses/userStatusesModel';
 import { type UserStatusesState } from '../user-statuses/userStatusesCore';
 import { Role } from '../api/permissionsTypes';
-import { getOwnUserRole } from '../permissionSelectors';
 import type { ServerEmojiData } from '../api/modelTypes';
 
 /**
@@ -52,7 +50,6 @@ export type BackgroundData = $ReadOnly<{|
   alertWords: AlertWordsState,
   allImageEmojiById: $ReadOnly<{| [id: string]: ImageEmoji |}>,
   auth: Auth,
-  debug: Debug,
   flags: FlagsState,
   mute: MuteState,
   allUsersById: Map<UserId, UserOrBot>,
@@ -69,6 +66,7 @@ export type BackgroundData = $ReadOnly<{|
   zulipFeatureLevel: number,
   serverEmojiData: ServerEmojiData | null,
   enableReadReceipts: boolean,
+  enableGuestUserIndicator: boolean,
 |}>;
 
 // TODO: Ideally this ought to be a caching selector that doesn't change
@@ -80,26 +78,28 @@ export type BackgroundData = $ReadOnly<{|
 export const getBackgroundData = (
   state: PerAccountState,
   globalSettings: GlobalSettingsState,
-  debug: Debug,
-): BackgroundData => ({
-  alertWords: state.alertWords,
-  allImageEmojiById: getAllImageEmojiById(state),
-  auth: getAuth(state),
-  debug,
-  flags: getFlags(state),
-  mute: getMute(state),
-  allUsersById: getAllUsersById(state),
-  mutedUsers: getMutedUsers(state),
-  ownUser: getOwnUser(state),
-  ownUserRole: getOwnUserRole(state),
-  streams: getStreamsById(state),
-  subscriptions: getSubscriptionsById(state),
-  unread: getUnread(state),
-  twentyFourHourTime: getRealm(state).twentyFourHourTime,
-  userSettingStreamNotification: getSettings(state).streamNotification,
-  displayEmojiReactionUsers: getSettings(state).displayEmojiReactionUsers,
-  userStatuses: getUserStatuses(state),
-  zulipFeatureLevel: getZulipFeatureLevel(state),
-  serverEmojiData: getRealm(state).serverEmojiData,
-  enableReadReceipts: getRealm(state).enableReadReceipts,
-});
+): BackgroundData => {
+  const ownUser = getOwnUser(state);
+  return {
+    alertWords: state.alertWords,
+    allImageEmojiById: getAllImageEmojiById(state),
+    auth: getAuth(state),
+    flags: getFlags(state),
+    mute: getMute(state),
+    allUsersById: getAllUsersById(state),
+    mutedUsers: getMutedUsers(state),
+    ownUser,
+    ownUserRole: ownUser.role,
+    streams: getStreamsById(state),
+    subscriptions: getSubscriptionsById(state),
+    unread: getUnread(state),
+    twentyFourHourTime: getRealm(state).twentyFourHourTime,
+    userSettingStreamNotification: getSettings(state).streamNotification,
+    displayEmojiReactionUsers: getSettings(state).displayEmojiReactionUsers,
+    userStatuses: getUserStatuses(state),
+    zulipFeatureLevel: getZulipFeatureLevel(state),
+    serverEmojiData: getRealm(state).serverEmojiData,
+    enableReadReceipts: getRealm(state).enableReadReceipts,
+    enableGuestUserIndicator: getRealm(state).enableGuestUserIndicator,
+  };
+};

@@ -23,7 +23,7 @@ import {
   caseNarrow,
   streamIdOfNarrow,
 } from '../utils/narrow';
-import { getMute, isTopicMuted } from '../mute/muteModel';
+import { getMute, isTopicVisibleInStream, isTopicVisible } from '../mute/muteModel';
 import { NULL_ARRAY, NULL_SUBSCRIPTION } from '../nullObjects';
 import * as logging from '../utils/logging';
 import { getStreamsById, getSubscriptionsById } from '../subscriptions/subscriptionSelectors';
@@ -87,22 +87,6 @@ export const getMessagesForNarrow: Selector<$ReadOnlyArray<Message | Outbox>, Na
     },
   );
 
-/** Whether this stream's messages should appear in the "all messages" narrow. */
-const showStreamInHomeNarrow = (
-  streamId: number,
-  subscriptions: Map<number, Subscription>,
-): boolean => {
-  const sub = subscriptions.get(streamId);
-  if (!sub) {
-    // If there's no matching subscription, then the user must have
-    // unsubscribed from the stream since the message was received.  Leave
-    // those messages out of this view, just like for a muted stream.
-    return false;
-  }
-
-  return sub.in_home_view;
-};
-
 /**
  * The known messages that should appear in the given narrow's message list.
  *
@@ -128,10 +112,15 @@ export const getShownMessagesForNarrow: Selector<$ReadOnlyArray<Message | Outbox
             if (flags.mentioned[message.id]) {
               return true;
             }
-            return (
-              showStreamInHomeNarrow(message.stream_id, subscriptions)
-              && !isTopicMuted(message.stream_id, message.subject, mute)
-            );
+            const sub = subscriptions.get(message.stream_id);
+            if (!sub) {
+              // If there's no matching subscription, then the user must have
+              // unsubscribed from the stream since the message was received.
+              // Leave those messages out of this view, just as we would if
+              // the user had muted the stream (without unmuting topics).
+              return false;
+            }
+            return isTopicVisible(message.stream_id, message.subject, sub, mute);
           }),
 
         stream: _ =>
@@ -142,7 +131,7 @@ export const getShownMessagesForNarrow: Selector<$ReadOnlyArray<Message | Outbox
             if (flags.mentioned[message.id]) {
               return true;
             }
-            return !isTopicMuted(message.stream_id, message.subject, mute);
+            return isTopicVisibleInStream(message.stream_id, message.subject, mute);
           }),
 
         // In the starred-message view, ignore stream/topic mutes.
@@ -211,6 +200,9 @@ export const getStreamInNarrow: Selector<Subscription | {| ...Stream, in_home_vi
   },
 );
 
+/**
+ * Whether PerAccountState has all data mentioned in `narrow` (user IDs etc.)
+ */
 export const isNarrowValid: Selector<boolean, Narrow> = createSelector(
   (state, narrow) => narrow,
   state => getStreamsById(state),

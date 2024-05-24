@@ -33,7 +33,7 @@ import { TranslationContext } from '../boot/TranslationProvider';
 import { draftUpdate, sendTypingStart, sendTypingStop } from '../actions';
 import Touchable from '../common/Touchable';
 import Input from '../common/Input';
-import { showToast, showErrorAlert } from '../utils/info';
+import { showErrorAlert } from '../utils/info';
 import { IconDone, IconSend } from '../common/Icons';
 import {
   isConversationNarrow,
@@ -51,6 +51,7 @@ import AnnouncementOnly from '../message/AnnouncementOnly';
 import MentionWarnings from './MentionWarnings';
 import {
   getAuth,
+  getOwnUser,
   getStreamInNarrow,
   getStreamsById,
   getVideoChatProvider,
@@ -66,13 +67,14 @@ import AutocompleteView from '../autocomplete/AutocompleteView';
 import { getAllUsersById, getOwnUserId } from '../users/userSelectors';
 import * as api from '../api';
 import { ensureUnreachable } from '../generics';
-import { getOwnUserRole, roleIsAtLeast } from '../permissionSelectors';
+import { roleIsAtLeast } from '../permissionSelectors';
 import { Role } from '../api/permissionsTypes';
 import useUncontrolledInput from '../useUncontrolledInput';
 import { tryFetch } from '../message/fetchActions';
 import { getMessageUrl } from '../utils/internalLinks';
 import * as logging from '../utils/logging';
 import type { Attachment } from './ComposeMenu';
+import { ApiError, RequestError } from '../api/apiErrors';
 
 /* eslint-disable no-shadow */
 
@@ -137,6 +139,7 @@ function getQuoteAndReplyText(args: {|
   user: UserOrBot,
   realm: URL,
   streamsById: Map<number, Stream>,
+  zulipFeatureLevel: number,
   _: GetText,
 |}): string {
   // Modeled on replace_content in static/js/compose_actions.js in the
@@ -149,13 +152,13 @@ function getQuoteAndReplyText(args: {|
   //   message content
   //   ```
 
-  const { message, rawContent, user, realm, streamsById, _ } = args;
+  const { message, rawContent, user, realm, streamsById, zulipFeatureLevel, _ } = args;
   const authorLine = _({
     // Matches the web-app string
     text: '{username} [said]({link_to_message}):',
     values: {
       username: `@_**${user.full_name}|${user.user_id}**`,
-      link_to_message: getMessageUrl(realm, message, streamsById).toString(),
+      link_to_message: getMessageUrl(realm, message, streamsById, zulipFeatureLevel).toString(),
     },
   });
   const fence = fenced_code.get_unused_fence(rawContent);
@@ -185,7 +188,7 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
   const zulipFeatureLevel = useSelector(getZulipFeatureLevel);
   const ownUserId = useSelector(getOwnUserId);
   const allUsersById = useSelector(getAllUsersById);
-  const isAtLeastAdmin = useSelector(state => roleIsAtLeast(getOwnUserRole(state), Role.Admin));
+  const isAtLeastAdmin = useSelector(state => roleIsAtLeast(getOwnUser(state).role, Role.Admin));
   const isAnnouncementOnly = useSelector(state =>
     getIsActiveStreamAnnouncementOnly(state, props.narrow),
   );
@@ -193,7 +196,7 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
   const stream = useSelector(state => getStreamInNarrow(state, props.narrow));
   const streamsById = useSelector(getStreamsById);
   const videoChatProvider = useSelector(getVideoChatProvider);
-  const mandatoryTopics = useSelector(state => getRealm(state).mandatoryTopics);
+  const { mandatoryTopics, enableGuestUserIndicator } = useSelector(getRealm);
 
   const mentionWarnings = React.useRef<React$ElementRef<typeof MentionWarnings> | null>(null);
 
@@ -261,15 +264,12 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
     setFocusState(state => ({ ...state, either: state.message || state.topic }));
   }, []);
 
-  const canSelectTopic = useMemo(() => {
-    if (isEditing) {
-      return isStreamOrTopicNarrow(narrow);
-    }
-    if (!isStreamNarrow(narrow)) {
-      return false;
-    }
-    return focusState.either;
-  }, [isEditing, narrow, focusState.either]);
+  const topicSelectionAllowed = useMemo(
+    () => (isEditing ? isStreamOrTopicNarrow(narrow) : isStreamNarrow(narrow)),
+    [isEditing, narrow],
+  );
+
+  const topicInputVisible = topicSelectionAllowed && (focusState.either || isEditing);
 
   /**
    * Inserts text at the message input's cursor position.
@@ -339,12 +339,31 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
           let response = null;
           try {
             response = await api.uploadFile(auth, attachments[i].url, fileName);
-          } catch {
-            showToast(_('Failed to upload file: {fileName}', { fileName }));
+          } catch (errorIllTyped) {
+            const error: mixed = errorIllTyped; // https://github.com/facebook/flow/issues/2470
+
+            if (!(error instanceof Error)) {
+              logging.error('ComposeBox: Unexpected non-error thrown');
+            }
+
+            let msg = undefined;
+            if (
+              error instanceof RequestError
+              && error.httpStatus === 413 // 413 Payload Too Large:
+              //   https://github.com/zulip/zulip-mobile/issues/5148#issuecomment-1092140960
+            ) {
+              msg = _('The server said the file is too large.');
+            } else if (error instanceof ApiError) {
+              msg = _('The server said:\n\n{errorMessage}', { errorMessage: error.message });
+            } else if (error instanceof Error && error.message.length > 0) {
+              msg = error.message;
+            }
+            showErrorAlert(_('Failed to upload file: {fileName}', { fileName }), msg);
+
             setMessageInputValue(state =>
               state.value.replace(
                 placeholder,
-                `[${_('Failed to upload file: {fileName}', { fileName })}]()`,
+                () => `[${_('Failed to upload file: {fileName}', { fileName })}]()`,
               ),
             );
             continue;
@@ -353,7 +372,7 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
           const linkText = `[${fileName}](${response.uri})`;
           setMessageInputValue(state =>
             state.value.indexOf(placeholder) !== -1
-              ? state.value.replace(placeholder, linkText)
+              ? state.value.replace(placeholder, () => linkText)
               : `${state.value}\n${linkText}`,
           );
         }
@@ -369,8 +388,9 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
   const anyQuoteAndReplyInProgress = activeQuoteAndRepliesCount > 0;
   const doQuoteAndReply = useCallback(
     async message => {
-      // TODO: If not already there, re-narrow to `message`'s conversation
-      //   narrow, with getNarrowForReply, and do the quote-and-reply there.
+      // TODO: For composing a new message (i.e. isEditing is false), if
+      //   not already there, re-narrow to `message`'s conversation narrow,
+      //   with getNarrowForReply, and do the quote-and-reply there.
       //   Discussion:
       //   https://chat.zulip.org/#narrow/stream/243-mobile-team/topic/.23M1975.20Quote.20and.20reply/near/1455302
 
@@ -413,15 +433,25 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
           return;
         }
 
+        if (topicSelectionAllowed && topicInputState.value === '' && message.type === 'stream') {
+          // Later, this won't be necessary in the case of composing a new
+          // message. See TODO above about re-narrowing to `message`'s
+          // conversation.
+          setTopicInputValue(message.subject);
+        }
         const quoteAndReplyText = getQuoteAndReplyText({
           message,
           rawContent,
           user,
           realm: auth.realm,
           streamsById,
+          zulipFeatureLevel,
           _,
         });
-        setMessageInputValue(state => state.value.replace(quotingPlaceholder, quoteAndReplyText));
+        setMessageInputValue(state =>
+          state.value.replace(quotingPlaceholder, () => quoteAndReplyText),
+        );
+        messageInputRef.current?.focus();
       } finally {
         setActiveQuoteAndRepliesCount(v => v - 1);
         activeInvocations.current = activeInvocations.current.filter(x => x !== serialNumber);
@@ -435,6 +465,10 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
       setMessageInputValue,
       zulipFeatureLevel,
       _,
+      topicSelectionAllowed,
+      topicInputState.value,
+      setTopicInputValue,
+      messageInputRef,
     ],
   );
   useImperativeHandle(ref, () => ({ doQuoteAndReply }), [doQuoteAndReply]);
@@ -464,18 +498,17 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
   );
 
   const handleMessageFocus = useCallback(() => {
+    setFocusState(state => ({ ...state, message: true, either: true }));
     if (
       !isEditing
       && isStreamNarrow(narrow)
-      && !focusState.either
+      && !focusState.either // not affected by setFocusState above; React state is set asynchronously
       && topicInputState.value === ''
     ) {
       // We weren't showing the topic input when the user tapped on the input
       // to focus it, but we're about to show it.  Focus that, if the user
       // hasn't already selected a topic.
       topicInputRef.current?.focus();
-    } else {
-      setFocusState(state => ({ ...state, message: true, either: true }));
     }
   }, [isEditing, narrow, focusState.either, topicInputState.value, topicInputRef]);
 
@@ -657,7 +690,7 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
           // (https://stackoverflow.com/a/49817873), which doesn't work
           // either. However, a combinarion of the two of them seems to
           // work.
-          ...(!canSelectTopic && { position: 'absolute', transform: [{ scale: 0 }] }),
+          ...(!topicInputVisible && { position: 'absolute', transform: [{ scale: 0 }] }),
         },
         composeTextInput: {
           // These border attributes override styles set in <Input />.
@@ -670,7 +703,7 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
           backgroundColor,
         },
       }),
-    [inputMarginPadding, backgroundColor, height, submitButtonDisabled, canSelectTopic],
+    [inputMarginPadding, backgroundColor, height, submitButtonDisabled, topicInputVisible],
   );
 
   const submitButtonHitSlop = useMemo(() => ({ top: 8, right: 8, bottom: 8, left: 8 }), []);
@@ -683,7 +716,14 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
     return <AnnouncementOnly />;
   }
 
-  const placeholder = getComposeInputPlaceholder(narrow, ownUserId, allUsersById, streamsById);
+  const placeholder = getComposeInputPlaceholder(
+    narrow,
+    ownUserId,
+    allUsersById,
+    streamsById,
+    enableGuestUserIndicator,
+    _,
+  );
 
   const SubmitButtonIcon = isEditing ? IconDone : IconSend;
 

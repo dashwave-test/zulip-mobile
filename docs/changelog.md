@@ -40,6 +40,570 @@ It doesn't include
 ## Unreleased
 
 
+## 27.228 (2024-05-01)
+
+### Highlights for users, vs. v27.225 (last prod release)
+
+* Streams are now called channels, if your server is version 9.0+. (#5827)
+* Fixed a bug where LaTeX was not quoted properly in the "Quote and reply"
+  option. (#5849)
+* Fixed a bug where long-pressing an invalid link would crash the app.
+  (#5854)
+* Updated translations for Bulgarian, German, Polish, Portuguese, Russian,
+  Spanish, Turkish, and Ukrainian. Thanks as always to our kind volunteer
+  translators!
+
+Plus other fixes and improvements for your Zulip experience.
+
+
+### Highlights for users, vs. v27.227 (last beta release)
+
+* Fixed a crash on login, which slipped through in the UI-string "channel"
+  rename. (PR #5865)
+* Updated translations for Bulgarian, Spanish, and Turkish. Thanks as always
+  to our kind volunteer translators!
+
+
+### Highlights for developers, vs. v27.227
+
+* Fixed a crash on login, which slipped through in the UI-string "channel"
+  rename. (PR #5865)
+
+* The UI-string "channel" terminology is now correctly conditioned on
+  FL >=255, not >255. (PR #5864)
+
+* Resolved issues: PR #5865, PR #5864
+
+
+## 27.227 (2024-04-25)
+
+### Highlights for users, vs. v27.225 (last prod release)
+
+* Streams are now called channels, if your server is version 9.0+. (#5827)
+* Fixed a bug where LaTeX was not quoted properly in the "Quote and reply"
+  option. (#5849)
+* Fixed a bug where long-pressing an invalid link would crash the app.
+  (#5854)
+* Updated translations for Bulgarian, German, Polish, Portuguese, Russian,
+  Turkish, and Ukrainian. Thanks as always to our kind volunteer translators!
+
+Plus other fixes and improvements for your Zulip experience.
+
+
+### Highlights for developers
+
+* Added a "privacy manifest". #5847
+
+* Ran `yarn upgrade`. (PR #5850)
+
+* Disabled Flipper on iOS. (PR #5848)
+
+* We now recognize the "channel" operator in narrow links. (#5860)
+
+* Resolved issues: #5854, #5849, #5832, #5860, PR #5843
+
+
+## 27.226 (2024-04-10)
+
+This was an iOS alpha-only release.
+
+### Highlights for users
+
+* Updated translations for Bulgarian, German, Polish, Russian, and
+  Ukrainian. Thanks as always to our kind volunteer translators!
+
+Plus other fixes and improvements for your Zulip experience.
+
+
+### Highlights for developers
+
+* Ran `yarn upgrade`. (PR #5850)
+
+* Disabled Flipper on iOS. (PR #5848)
+
+* Resolved issues: PR #5843
+
+
+## 27.225 (2024-02-27)
+
+### Highlights for users, vs. v27.223 (last prod release)
+
+* We now offer the app in Gujarati. Also, updated translations for Italian,
+  Turkish, and Chinese (Taiwan). Thanks as always to our kind volunteer
+  translators!
+
+Plus other fixes and improvements for your Zulip experience.
+
+
+### Highlights for users, vs. v27.224
+
+* (Android) Fixed a crash on startup. (PR #5824)
+
+
+### Highlights for developers, vs. v27.224
+
+* (Android) Updated jsBundleDirRelease for AGP 7.1+, fixing crash on startup
+  (PR #5824)
+
+* Resolved issues: PR #5824
+
+
+## 27.224 (2024-02-26)
+
+This was an alpha-only release.
+
+
+### Highlights for users
+
+* We now offer the app in Gujarati. Also, updated translations for Italian,
+  Turkish, and Chinese (Taiwan). Thanks as always to our kind volunteer
+  translators!
+
+Plus other fixes and improvements for your Zulip experience.
+
+
+### Highlights for developers
+
+* We now show the test-notification button when the server is FL 234+
+  instead of 217+. (PR #5819)
+
+* Bumped the Android Gradle Plugin from 7.0.4 to 7.2.2. (PR #5818)
+
+* Ran `yarn upgrade`. (PRs #5818, #5823)
+
+* Resolved issues: PR #5823, PR #5819, PR #5818
+
+
+## 27.223 (2024-01-26)
+
+### Highlights for users
+
+* Updated translations for Belarusian, German, and Russian. Thanks as always
+  to our kind volunteer translators!
+
+Plus other fixes and improvements for your Zulip experience.
+
+
+### Highlights for developers
+
+* Updated CocoaPods to 1.13.0.
+
+* We now warn when the realm's push-notifications plan will be expiring
+  soon. (PRs #5812 and #5814)
+
+* Resolved issues: PR #5814, PR #5812
+
+
+## 27.222 (2024-01-05)
+
+### Highlights for users
+
+* We now show a "(guest)" indicator on guest users' names, unless your
+  organization is running Zulip Server 8.0+ and has turned the
+  indicator off: https://zulip.com/help/guest-users . (#5804)
+
+Plus other fixes and improvements for your Zulip experience.
+
+### Highlights for developers
+
+* Resolved issues: #5804, #5785, #5805
+
+
+## 27.221 (2023-12-07)
+
+### Highlights for users
+
+* New "Send a test notification" button in the notification settings,
+  if your organization is running Zulip Server 8 (to be released soon).
+  (#5796)
+
+
+### Highlights for developers
+
+* Resolved issues: #5796
+
+
+## 27.220 (2023-11-22)
+
+### Highlights for users
+
+* Support for followed topics, an upcoming Zulip Server 8 feature. (#5769,
+  #5770, #5771)
+
+* We now offer the app in Latvian and Tagalog. Thanks as always to our kind
+  volunteer translators!
+
+
+### Highlights for developers
+
+* Resolved issues:  #5771, #5770, #5769
+
+
+## 27.219 (2023-11-15)
+
+### Highlights for users
+
+* Support for @topic mentions, an upcoming Zulip Server 8 feature. (#5792)
+
+* Support for the upcoming Zulip Server 8 feature of showing video
+  links and video files uploaded directly in Zulip. (#5781)
+
+Plus other fixes and improvements for your Zulip experience.
+
+
+### Highlights for developers
+
+* Compatibility fixes for the upcoming "limited guests" feature in Zulip
+  Server 8. (PR #5790, part of #5787)
+
+* Resolved issues: PR #5790, #5781
+
+
+## 27.218 (2023-11-09)
+
+### Highlights for users
+
+* Updated translations for Belarusian, German, and Persian.
+  Thanks as always to our kind volunteer translators!
+
+
+### Highlights for developers
+
+* Increased the typing-started expiry period from 15s to 45s. (PR #5786)
+
+* Resolved issues: PR #5786
+
+
+## 27.217 (2023-11-02)
+
+### Highlights for users
+
+* Updated translations for Chinese (China), Danish, German, and Persian.
+  Thanks as always to our kind volunteer translators!
+
+
+### Highlights for developers
+
+* Re-enabled Sentry, this time with no libsentry.so. (#5782)
+
+* We now render @topic mentions (an upcoming Zulip Server 8 feature)
+  correctly in the message list. (#5746)
+
+* Resolved issues: #5782, #5746
+
+
+## 27.216 (2023-10-10)
+
+This is an Android-only release.
+The equivalent release for iOS was v27.214.
+
+
+### Highlights for users, vs. v27.213 (last prod release)
+
+* In an interleaved stream view, "Quote and reply" now fills the topic
+  input, if it was empty, and focuses the message input. (#5718)
+
+
+### Highlights for users, vs. v27.214 (last beta release)
+
+* (Android) Disabled Sentry error reporting, to resolve
+  crashes following a recent Android update. (#5778)
+
+
+### Highlights for developers, vs. v27.214 (last release from main)
+
+* Disabled Sentry on Android again. (#5778)
+
+
+## 27.215 (2023-10-10)
+
+This was an alpha-only, Android-only release in the v27.211 series,
+with cherry-picked changes atop v27.213.
+
+
+### Highlights for users, vs. v27.213
+
+* (Android) Update various behavior on Android 13+ as required by
+  Google Play. (#5453)
+
+
+### Highlights for developers, vs. v27.213
+
+* Bumped `targetSdkVersion` to 33, aka Android 13, this time handling the
+  new POST_NOTIFICATIONS permission. (#5753, #5453)
+
+
+## 27.214 (2023-10-05)
+
+On Android this was a beta-only release,
+and the corresponding production release was v27.216.
+On iOS this was a normal production release.
+
+
+### Highlights for users, vs. v27.213 (last prod release)
+
+* In an interleaved stream view, "Quote and reply" now fills the topic
+  input, if it was empty, and focuses the message input. (#5718)
+
+
+### Highlights for developers, vs. v27.212 (last release from main)
+
+* (Android) Configured Sentry with `enableNdk: false`, as a workaround for
+  the crash bug #5757. (#5766)
+
+* In the notification troubleshooting screen, when the email library reports
+  successfully sending a support email, that fact will be reported in
+  Sentry. (PR #5775)
+
+* Resolved issues: #5766
+
+
+## 27.213 (2023-09-20)
+
+This is an Android-only release in the v27.211 series.
+
+
+### Highlights for users, vs. v27.211
+
+* (Android) Disabled Sentry error reporting, which was causing
+  crashes following a recent Android update. (#5757)
+
+
+### Highlights for developers, vs. v27.211
+
+* Disabled Sentry on Android, as a workaround for the newly-frequent
+  crash bug #5757.
+
+
+## 27.212 (2023-09-15)
+
+This was an alpha-only release.
+
+
+### Highlights for users
+
+* In an interleaved stream view, "Quote and reply" now fills the topic
+  input, if it was empty, and focuses the message input. (#5718)
+
+
+### Highlights for developers
+
+* Bumped `targetSdkVersion` to 33, aka Android 13, this time handling the
+  new POST_NOTIFICATIONS permission. (#5753, #5453)
+
+* Bumped `kMinAllowedServerVersion` to 4.0 and
+  `kMinSupportedVersion` to 5.0. (PR #5762)
+
+* Ran `yarn upgrade`. (PR #5756)
+
+* (Android) Added device manufacturer/model to notification troubleshooting
+  data. (PR #5754)
+
+* Resolved issues: #5718, #5753, #5453
+
+
+## 27.211 (2023-08-31)
+
+This is an Android-only release. It is the same as v27.209 except its
+version number.
+
+
+### Highlights for users
+
+* Fixed a bug introduced in v27.210 where notifications stopped working on
+  Android 13. (#5752)
+
+This release is identical to v27.209 except for its version number.
+
+
+### Highlights for developers
+
+* Reverted the `targetSdkVersion` bump to 33, so it's back to 31. (#5752)
+
+* Resolved issues: PR #5752
+
+
+## 27.210 (2023-08-29)
+
+This is an Android-only release.
+
+
+### Highlights for users
+
+* (Android) In this release, we adjust some build configuration as required
+  by Google Play. (We set targetSdkVersion to 33, a.k.a. Android 13.) (#5453)
+
+
+### Highlights for developers
+
+* Bumped `targetSdkVersion` to 33, aka Android 13. (#5453)
+
+* Resolved issues: #5453
+
+
+## 27.209 (2023-08-18)
+
+### Highlights for users
+
+* (iOS) You can now upload video attachments from your camera or media
+  library. (#3624, #5733)
+* (Android) You can now upload video attachments from your media library
+  (Android 13+). (#3624)
+
+
+### Highlights for developers
+
+* Bumped `kMinAllowedServerVersion` to 3.0. (PR #5747)
+
+* Bumped `kMinSupportedVersion` to 4.10. (PR #5748)
+
+* Resolved issues: #3624, #5733
+
+
+## 27.208 (2023-05-25)
+
+### Highlights for users
+
+* "Private messages" are now called "direct messages", following that rename
+  in Zulip Server 7.0. (#5731)
+
+Plus, like every release, other fixes and improvements for your Zulip
+experience.
+
+
+## 27.207 (2023-05-04)
+
+### Highlights for users
+
+* Support for unmuting topics in a muted stream, an upcoming Zulip Server 7
+  feature. (#5727, #5691)
+* (Android) We believe we have fixed a nasty bug where the keyboard would
+  freeze while typing on some Samsung devices. If the issue persists,
+  please report it! (#5729)
+
+Plus, like every release, other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* Changed where we generate `/pm-with/…` links (just in quote-and-reply) to
+  use the new `/dm/…` format instead. (#5710)
+
+* Resolved issues: #5729, #5691, #5362, #5726, #5710
+
+
+## 27.206 (2023-04-25)
+
+### Highlights for users
+
+* We've added more failure handling to the notification troubleshooting
+  screen. (PR #5721)
+* We now offer the app in Luri (Bakhtiari). Many thanks to our kind volunteer
+  translators!
+
+
+### Highlights for developers
+
+* Users can now retry the register-device-token request on demand, and if
+  the server gives an error, they can see the message in the client.
+  (PR #5721)
+
+
+## 27.205 (2023-04-06)
+
+### Highlights for users
+
+* (iOS) Fixed an issue where text inputs wouldn't respond to tapping near
+  the left edge of the screen. (#5486)
+
+Plus, like every release, other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* Bumped `kMinSupportedVersion` to "4.0". (PR #5707)
+
+* We now use presence tuning parameters from the server, when available.
+  (#5669)
+
+* We now support narrow links with new "/dm/…" and "/is/dm" filters (the new
+  way to say "/pm-with/…" and "/is/private"). (#5692)
+
+* Ran `yarn upgrade`. (PR #5713)
+
+* Upgraded Flow to v0.175.1. (PR #5700)
+
+* Prep work toward supporting unmuted topics in muted streams. (PR #5690)
+
+* Converted more of our Java code to Kotlin. (PR #5695, PR #5701)
+
+* Used `patch-package` to fix an Xcode build failure in `react-native`. (PR #5709)
+
+* Resolved issues: #5669, #5692, #5698, #5702, #5486
+
+
+## 27.204 (2023-03-13)
+
+### Highlights for users
+
+* (iOS) Fixed a bug where tapping a notification wouldn't bring you to the
+  conversation. (#5679)
+* Fixed a bug where the app wouldn't work if your email address contained
+  diacritics or characters from non-Latin scripts. (PR #5178)
+
+Plus, like every release, other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* We've adapted the topic-mute model to the new `user_topic` API. (#5380)
+
+* Resolved issues: #5679, #5380, PR #5178
+
+
+## 27.203 (2023-03-10)
+
+### Highlights for users
+
+This release is identical to version v27.201, except we've now correctly
+marked the app as requiring iOS 14+.
+
+
+## 27.202 (2023-03-10)
+
+This is an iOS-only stable release in the v27.201 series, with a bugfix
+atop v27.201.
+
+### Highlights for users
+
+* (iOS) Fixed a bug on devices running iOS 12 where the unread notice would
+  show nonsense instead of the number of unread messages. (#5670)
+
+Note: This will be the last release to support iOS 12 and 13.
+
+## 27.201 (2023-02-17)
+
+### Highlights for users
+
+* The app now offers more help resolving issues with notifications. (#5654)
+* The search screen now loads older results as you scroll up. (#4859)
+* The app now offers more information when a file upload fails. (#5663)
+
+Plus, like every release, other fixes and improvements for your Zulip
+experience.
+
+
+### Highlights for developers
+
+* We fixed a rare bug where corrupt, partial `Account` objects could appear
+  in state when an action races with removing an account. (PR #5656)
+
+* Resolved issues: PR #5656, PR #5663, #4859, PR #5654
+
+
 ## 27.200 (2023-02-01)
 
 ### Highlights for users

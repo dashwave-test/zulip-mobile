@@ -11,6 +11,9 @@ import Touchable from '../common/Touchable';
 import { createStyleSheet, ThemeContext } from '../styles';
 import { caseNarrowDefault, isStreamOrTopicNarrow } from '../utils/narrow';
 import { TranslationContext } from '../boot/TranslationProvider';
+import { useSelector } from '../react-redux';
+import { getZulipFeatureLevel } from '../account/accountsSelectors';
+import { streamChannelRenameFeatureLevel } from '../boot/streamChannelRenamesMap';
 
 /**
  * A type of wildcard mention recognized by the server.
@@ -26,6 +29,7 @@ export enum WildcardMentionType {
   All = 0,
   Everyone = 1,
   Stream = 2,
+  Topic = 3,
 }
 
 /**
@@ -37,14 +41,20 @@ export enum WildcardMentionType {
 // All of these should appear in messages_en.json so we can make the
 // wildcard mentions discoverable in the people autocomplete in the client's
 // own language. See getWildcardMentionsForQuery.
-const englishCanonicalStringOf = (type: WildcardMentionType): string => {
+const englishCanonicalStringOf = (
+  type: WildcardMentionType,
+  useChannelTerminology: boolean,
+): string => {
   switch (type) {
     case WildcardMentionType.All:
       return 'all';
     case WildcardMentionType.Everyone:
       return 'everyone';
     case WildcardMentionType.Stream:
-      return 'stream';
+      // TODO(server-9.0) remove "stream" terminology
+      return useChannelTerminology ? 'channel' : 'stream';
+    case WildcardMentionType.Topic:
+      return 'topic';
   }
 };
 
@@ -74,57 +84,60 @@ const descriptionOf = (
       );
     case WildcardMentionType.Stream:
       return _('Notify stream');
+    case WildcardMentionType.Topic:
+      return _('Notify topic');
   }
 };
-
-/**
- * The enum's members, as an array in order of preference, with "stream".
- *
- * When a query matches more than one of these, choose the first one. For a
- * similar array that doesn't include WildcardMentionType.Stream, see
- * kOrderedTypesWithoutStream.
- */
-// Greg points out:
-//
-// > The help center mentions @-all, sometimes also @-everyone, and never
-// > @-stream that I can see:
-// > https://zulip.com/help/mention-a-user-or-group
-// > https://zulip.com/help/pm-mention-alert-notifications
-// > So I think the right order of preference is [all, everyone, stream].
-const kOrderedTypesWithStream = [
-  WildcardMentionType.All,
-  WildcardMentionType.Everyone,
-  WildcardMentionType.Stream,
-];
-
-/**
- * The enum's members, as an array in order of preference, without "stream".
- *
- * When a query matches more than one of these, choose the first one. For a
- * similar array that includes WildcardMentionType.Stream, see
- * kOrderedTypesWithStream.
- */
-// See implementation note at kOrderedTypesWithStream.
-const kOrderedTypesWithoutStream = [WildcardMentionType.All, WildcardMentionType.Everyone];
 
 export const getWildcardMentionsForQuery = (
   query: string,
   destinationNarrow: Narrow,
+  topicMentionSupported: boolean,
+  useChannelTerminology: boolean,
   _: GetText,
 ): $ReadOnlyArray<WildcardMentionType> => {
-  // This assumes that we'll never want to show two suggestions for one query.
-  // That's OK, as long as all of WildcardMentionType's members are synonyms,
-  // and it's nice not to crowd the autocomplete with multiple items that mean
-  // the same thing. But we'll need to adapt if it turns out that all the
-  // members aren't synonyms.
-  const match = (
-    isStreamOrTopicNarrow(destinationNarrow) ? kOrderedTypesWithStream : kOrderedTypesWithoutStream
-  ).find(
-    type =>
-      typeahead.query_matches_string(query, serverCanonicalStringOf(type), ' ')
-      || typeahead.query_matches_string(query, _(englishCanonicalStringOf(type)), ' '),
-  );
-  return match != null ? [match] : [];
+  const queryMatchesWildcard = (type: WildcardMentionType): boolean =>
+    typeahead.query_matches_string(
+      query,
+      serverCanonicalStringOf(type, useChannelTerminology),
+      ' ',
+    )
+    || typeahead.query_matches_string(
+      query,
+      _(englishCanonicalStringOf(type, useChannelTerminology)),
+      ' ',
+    );
+
+  const results = [];
+
+  // These three WildcardMentionType values are synonyms, so only show one.
+  //
+  // The help center mentions @-all, sometimes also @-everyone, and
+  // apparently never @-stream:
+  //   https://zulip.com/help/mention-a-user-or-group
+  //   https://zulip.com/help/pm-mention-alert-notifications
+  // So the right order of preference seems to be [all, everyone, stream].
+  if (queryMatchesWildcard(WildcardMentionType.All)) {
+    results.push(WildcardMentionType.All);
+  } else if (queryMatchesWildcard(WildcardMentionType.Everyone)) {
+    results.push(WildcardMentionType.Everyone);
+  } else if (
+    isStreamOrTopicNarrow(destinationNarrow)
+    && queryMatchesWildcard(WildcardMentionType.Stream)
+  ) {
+    results.push(WildcardMentionType.Stream);
+  }
+
+  // Then show @-topic if it applies.
+  if (
+    topicMentionSupported
+    && isStreamOrTopicNarrow(destinationNarrow)
+    && queryMatchesWildcard(WildcardMentionType.Topic)
+  ) {
+    results.push(WildcardMentionType.Topic);
+  }
+
+  return results;
 };
 
 type Props = $ReadOnly<{|
@@ -138,9 +151,12 @@ export default function WildcardMentionItem(props: Props): Node {
 
   const _ = useContext(TranslationContext);
 
+  const zulipFeatureLevel = useSelector(getZulipFeatureLevel);
+  const useChannelTerminology = zulipFeatureLevel >= streamChannelRenameFeatureLevel;
+
   const handlePress = useCallback(() => {
-    onPress(type, serverCanonicalStringOf(type));
-  }, [onPress, type]);
+    onPress(type, serverCanonicalStringOf(type, useChannelTerminology));
+  }, [onPress, type, useChannelTerminology]);
 
   const themeContext = useContext(ThemeContext);
 
@@ -182,7 +198,7 @@ export default function WildcardMentionItem(props: Props): Node {
         <View style={styles.textWrapper}>
           <ZulipText
             style={styles.text}
-            text={serverCanonicalStringOf(type)}
+            text={serverCanonicalStringOf(type, useChannelTerminology)}
             numberOfLines={1}
             ellipsizeMode="tail"
           />

@@ -5,7 +5,6 @@ import { makeUserId } from '../api/idTypes';
 import type { Narrow, Stream, UserId, Message, Outbox, PmMessage, PmOutbox } from '../types';
 import { topicNarrow, streamNarrow, specialNarrow, pmNarrowFromRecipients } from './narrow';
 import { pmKeyRecipientsFromIds, recipientsOfPrivateMessage } from './recipient';
-import { ensureUnreachable } from '../generics';
 import { isUrlOnRealm } from './url';
 
 /**
@@ -35,8 +34,6 @@ const getHashSegmentsFromNarrowLink = (url: URL, realm: URL) => {
 };
 
 /**
- * PRIVATE -- exported only for tests.
- *
  * Test for a link to a Zulip narrow on the given realm.
  *
  * True just if the given URL appears to be a link to a Zulip narrow on the
@@ -47,51 +44,6 @@ export const isNarrowLink = (url: URL, realm: URL): boolean =>
   && url.pathname === '/'
   && url.search === ''
   && /^#narrow\//i.test(url.hash);
-
-type LinkType = 'non-narrow' | 'home' | 'pm' | 'topic' | 'stream' | 'special';
-
-/**
- * PRIVATE -- exported only for tests.
- */
-// TODO: Work out what this does, write a jsdoc for its interface, and
-// reimplement using URL object (not just for the realm)
-export const getLinkType = (url: URL, realm: URL): LinkType => {
-  if (!isNarrowLink(url, realm)) {
-    return 'non-narrow';
-  }
-
-  // isNarrowLink(…) is true, by early return above, so this call is OK.
-  const hashSegments = getHashSegmentsFromNarrowLink(url, realm);
-
-  if (
-    (hashSegments.length === 2 && hashSegments[0] === 'pm-with')
-    || (hashSegments.length === 4 && hashSegments[0] === 'pm-with' && hashSegments[2] === 'near')
-  ) {
-    return 'pm';
-  }
-
-  if (
-    (hashSegments.length === 4 || hashSegments.length === 6)
-    && hashSegments[0] === 'stream'
-    && (hashSegments[2] === 'subject' || hashSegments[2] === 'topic')
-  ) {
-    return 'topic';
-  }
-
-  if (hashSegments.length === 2 && hashSegments[0] === 'stream') {
-    return 'stream';
-  }
-
-  if (
-    hashSegments.length === 2
-    && hashSegments[0] === 'is'
-    && /^(private|starred|mentioned)/i.test(hashSegments[1])
-  ) {
-    return 'special';
-  }
-
-  return 'home';
-};
 
 /** Decode a dot-encoded string. */
 // The Zulip webapp uses this encoding in narrow-links:
@@ -112,19 +64,28 @@ export const decodeHashComponent = (string: string): string => {
 };
 
 /**
- * Parse the operand of a `stream` operator.
+ * Parse the operand of a `stream` operator, returning a stream ID.
  *
- * Return null if the operand doesn't match any known stream.
+ * The ID might point to a stream that's hidden from our user (perhaps
+ * doesn't exist). If so, most likely the user doesn't have permission to
+ * see the stream's existence -- like with a guest user for any stream
+ * they're not in, or any non-admin with a private stream they're not in.
+ * Could be that whoever wrote the link just made something up.
+ *
+ * Returns null if the operand has an unexpected shape, or has the old shape
+ * (stream name but no ID) and we don't know of a stream by the given name.
  */
-const parseStreamOperand = (operand, streamsById, streamsByName): null | Stream => {
+// Why does this parser need stream data? Because the operand formats
+// ("new" and "old") collide, and in choosing which format to apply, we
+// want to know if one or the other would give a real stream we know
+// about. Also, we can't get a stream ID from an "old"-format operand
+// without a mapping from stream names to IDs.
+const parseStreamOperand = (operand, streamsById, streamsByName): null | number => {
   // "New" (2018) format: ${stream_id}-${stream_name} .
   const match = /^([\d]+)(?:-.*)?$/.exec(operand);
-  if (match) {
-    const streamId = parseInt(match[1], 10);
-    const stream = streamsById.get(streamId);
-    if (stream) {
-      return stream;
-    }
+  const newFormatStreamId = match ? parseInt(match[1], 10) : null;
+  if (newFormatStreamId != null && streamsById.has(newFormatStreamId)) {
+    return newFormatStreamId;
   }
 
   // Old format: just stream name.  This case is relevant indefinitely,
@@ -132,15 +93,17 @@ const parseStreamOperand = (operand, streamsById, streamsByName): null | Stream 
   const streamName = decodeHashComponent(operand);
   const stream = streamsByName.get(streamName);
   if (stream) {
-    return stream;
+    return stream.stream_id;
   }
 
-  // Not any stream we know.  (Most likely this means a stream the user
-  // doesn't have permission to see the existence of -- like with a guest
-  // user for any stream they're not in, or any non-admin with a private
-  // stream they're not in.  Could also be an old-format link to a stream
-  // that's since been renamed… or whoever wrote the link could always have
-  // just made something up.)
+  if (newFormatStreamId != null) {
+    // Neither format found a Stream, so it's hidden or doesn't exist. But
+    // at least we have a stream ID; give that to the caller. (See jsdoc.)
+    return newFormatStreamId;
+  }
+
+  // Unexpected shape, or the old shape and we don't know of a stream with
+  // the given name.
   return null;
 };
 
@@ -154,54 +117,87 @@ const parsePmOperand = operand => {
 };
 
 /**
- * TODO write jsdoc
+ * Gives a Narrow object for the given narrow link, or `null`.
+ *
+ * Returns null if any of the operator/operand pairs are invalid.
+ *
+ * Since narrow links can combine operators in ways our Narrow type can't
+ * represent, this can also return null for valid narrow links.
+ *
+ * This can also return null for some valid narrow links that our Narrow
+ * type *could* accurately represent. We should try to understand these
+ * better, but some kinds will be rare, even unheard-of:
+ *   #narrow/topic/mobile.20releases/stream/1-announce (stream/topic reversed)
+ *   #narrow/stream/1-announce/stream/1-announce (duplicated operator)
+ *
+ * The passed `url` must appear to be a link to a Zulip narrow on the given
+ * `realm`. In particular, `isNarrowLink(url, realm)` must be true.
  */
-export const getNarrowFromLink = (
+export const getNarrowFromNarrowLink = (
   url: URL,
   realm: URL,
   streamsById: Map<number, Stream>,
   streamsByName: Map<string, Stream>,
   ownUserId: UserId,
 ): Narrow | null => {
-  const type = getLinkType(url, realm);
-
-  if (type === 'non-narrow') {
-    return null;
-  }
-
-  // isNarrowLink(…) is true, by early return above, so this call is OK.
+  // isNarrowLink(…) is true, by jsdoc, so this call is OK.
   const hashSegments = getHashSegmentsFromNarrowLink(url, realm);
 
-  switch (type) {
-    case 'pm': {
-      // TODO: This case is pretty useless in practice, due to basically a
-      //   bug in the webapp: the URL that appears in the location bar for a
-      //   group PM conversation excludes self, so it's unusable for anyone
-      //   else.  In particular this will foil you if, say, you try to give
-      //   someone else in the conversation a link to a particular message.
-      const ids = parsePmOperand(hashSegments[1]);
-      return pmNarrowFromRecipients(pmKeyRecipientsFromIds(ids, ownUserId));
-    }
-    case 'topic': {
-      const stream = parseStreamOperand(hashSegments[1], streamsById, streamsByName);
-      return stream && topicNarrow(stream.stream_id, parseTopicOperand(hashSegments[3]));
-    }
-    case 'stream': {
-      const stream = parseStreamOperand(hashSegments[1], streamsById, streamsByName);
-      return stream && streamNarrow(stream.stream_id);
-    }
-    case 'special':
-      try {
-        return specialNarrow(hashSegments[1]);
-      } catch {
-        return null;
-      }
-    case 'home':
-      return null; // TODO(?): Give HOME_NARROW
-    default:
-      ensureUnreachable(type);
-      return null;
+  if (
+    // 'dm' is new in server-7.0; means the same as 'pm-with'
+    (hashSegments.length === 2 && (hashSegments[0] === 'pm-with' || hashSegments[0] === 'dm'))
+    || (hashSegments.length === 4
+      && (hashSegments[0] === 'pm-with' || hashSegments[0] === 'dm')
+      && hashSegments[2] === 'near')
+  ) {
+    // TODO: This case is pretty useless in practice, due to basically a
+    //   bug in the webapp: the URL that appears in the location bar for a
+    //   group PM conversation excludes self, so it's unusable for anyone
+    //   else.  In particular this will foil you if, say, you try to give
+    //   someone else in the conversation a link to a particular message.
+    const ids = parsePmOperand(hashSegments[1]);
+    return pmNarrowFromRecipients(pmKeyRecipientsFromIds(ids, ownUserId));
   }
+
+  if (
+    (hashSegments.length === 4 || hashSegments.length === 6)
+    // 'channel' is new in server-9.0; means the same as 'stream'
+    && (hashSegments[0] === 'stream' || hashSegments[0] === 'channel')
+    && (hashSegments[2] === 'subject' || hashSegments[2] === 'topic')
+  ) {
+    const streamId = parseStreamOperand(hashSegments[1], streamsById, streamsByName);
+    return streamId != null ? topicNarrow(streamId, parseTopicOperand(hashSegments[3])) : null;
+  }
+
+  if (
+    hashSegments.length === 2
+    // 'channel' is new in server-9.0; means the same as 'stream'
+    && (hashSegments[0] === 'stream' || hashSegments[0] === 'channel')
+  ) {
+    const streamId = parseStreamOperand(hashSegments[1], streamsById, streamsByName);
+    return streamId != null ? streamNarrow(streamId) : null;
+  }
+
+  if (
+    hashSegments.length === 2
+    && hashSegments[0] === 'is'
+    && (hashSegments[1] === 'starred'
+      || hashSegments[1] === 'mentioned'
+      || hashSegments[1] === 'dm' // new in server-7.0; means the same as 'private'
+      || hashSegments[1] === 'private')
+  ) {
+    switch (hashSegments[1]) {
+      case 'starred':
+        return specialNarrow('starred');
+      case 'mentioned':
+        return specialNarrow('mentioned');
+      case 'dm':
+      case 'private':
+        return specialNarrow('dm');
+    }
+  }
+
+  return null; // TODO(?) Give HOME_NARROW
 };
 
 /**
@@ -246,7 +242,9 @@ export const getStreamTopicUrl = (
   streamsById: Map<number, Stream>,
 ): URL => {
   const maybe_get_stream_name = id => streamsById.get(id)?.name;
-  const path = internal_url.by_stream_topic_url(streamId, topic, maybe_get_stream_name);
+  const encodedStreamId = internal_url.encode_stream_id(streamId, maybe_get_stream_name);
+  const encodedTopic = internal_url.encodeHashComponent(topic);
+  const path = `#narrow/stream/${encodedStreamId}/topic/${encodedTopic}`;
   return new URL(path, realm);
 };
 
@@ -256,7 +254,7 @@ export const getStreamUrl = (
   streamsById: Map<number, Stream>,
 ): URL => {
   const maybe_get_stream_name = id => streamsById.get(streamId)?.name;
-  const path = internal_url.by_stream_url(streamId, maybe_get_stream_name);
+  const path = `#narrow/stream/${internal_url.encode_stream_id(streamId, maybe_get_stream_name)}`;
   return new URL(path, realm);
 };
 
@@ -265,13 +263,19 @@ export const getStreamUrl = (
  */
 // Based on pm_perma_link in static/js/people.js in the zulip/zulip repo.
 // TODO(shared): Share that code.
-export const getPmConversationLinkForMessage = (realm: URL, message: PmMessage | PmOutbox): URL => {
+export const getPmConversationLinkForMessage = (
+  realm: URL,
+  message: PmMessage | PmOutbox,
+  zulipFeatureLevel: number,
+): URL => {
   const recipientIds = recipientsOfPrivateMessage(message)
     .map(r => r.id)
     .sort((a, b) => a - b);
-  const suffix = recipientIds.length >= 3 ? 'group' : 'pm';
+  const suffix = recipientIds.length >= 3 ? 'group' : zulipFeatureLevel >= 177 ? 'dm' : 'pm';
   const slug = `${recipientIds.join(',')}-${suffix}`;
-  return new URL(`#narrow/pm-with/${slug}`, realm);
+  // TODO(server-7.0): Remove FL 177 condition (here and on `suffix`)
+  const operator = zulipFeatureLevel >= 177 ? 'dm' : 'pm-with';
+  return new URL(`#narrow/${operator}/${slug}`, realm);
 };
 
 /**
@@ -281,6 +285,7 @@ export const getMessageUrl = (
   realm: URL,
   message: Message | Outbox,
   streamsById: Map<number, Stream>,
+  zulipFeatureLevel: number,
 ): URL => {
   let result = undefined;
 
@@ -288,7 +293,7 @@ export const getMessageUrl = (
   if (message.type === 'stream') {
     result = getStreamTopicUrl(realm, message.stream_id, message.subject, streamsById);
   } else {
-    result = getPmConversationLinkForMessage(realm, message);
+    result = getPmConversationLinkForMessage(realm, message, zulipFeatureLevel);
   }
 
   // …then add the part that points to the message.

@@ -7,16 +7,10 @@ import Immutable from 'immutable';
 
 import type { GlobalState } from '../../reduxTypes';
 import type { Action } from '../../actionTypes';
-import {
-  isFetchNeededAtAnchor,
-  fetchMessages,
-  fetchOlder,
-  fetchNewer,
-  tryFetch,
-} from '../fetchActions';
+import { isFetchNeededAtAnchor, fetchMessages, tryFetch } from '../fetchActions';
 import { FIRST_UNREAD_ANCHOR } from '../../anchor';
 import type { FetchedMessage } from '../../api/rawModelTypes';
-import { streamNarrow, HOME_NARROW, HOME_NARROW_STR, keyFromNarrow } from '../../utils/narrow';
+import { streamNarrow, HOME_NARROW, keyFromNarrow } from '../../utils/narrow';
 import { GravatarURL } from '../../utils/avatar';
 import * as eg from '../../__tests__/lib/exampleData';
 import { Server5xxError, NetworkError } from '../../api/apiErrors';
@@ -303,7 +297,7 @@ describe('fetchActions', () => {
         // [2] https://chat.zulip.org/#narrow/stream/243-mobile-team/topic/.23M4156.20Message.20List.20placeholders/near/928778
 
         expect(actions[1].type).toBe('MESSAGE_FETCH_COMPLETE');
-        expect(returnValue).toEqual([message1]);
+        expect(returnValue.messages).toEqual([message1]);
       });
     });
 
@@ -315,10 +309,9 @@ describe('fetchActions', () => {
       });
 
       test('rejects when user is not logged in, dispatches MESSAGE_FETCH_ERROR', async () => {
-        const stateWithoutAccount = {
-          ...baseState,
+        const stateWithoutAccount = eg.reduxStatePlus({
           accounts: [],
-        };
+        });
         const store = mockStore<GlobalState, Action>(stateWithoutAccount);
 
         const response = {
@@ -347,48 +340,39 @@ describe('fetchActions', () => {
       });
 
       test("rejects when validation-at-the-edge can't handle data, dispatches MESSAGE_FETCH_ERROR", async () => {
+        // Regression test for #4156.  There was a server bug that caused
+        // message data to be malformed, and though it was only briefly in
+        // main, a user did run into it in real life:
+        //   https://github.com/zulip/zulip-mobile/issues/4156#issuecomment-655905093
+        //
         // This validation is done in transformFetchedMessages in
         // rawModelTypes.
-        //
-        // Simulate #4156, a real-life problem that a user at server commit
-        // 0af2f9d838 ran into [1], by having `user` be missing on reactions
-        // on a message:
-        //   https://github.com/zulip/zulip-mobile/issues/4156#issuecomment-655905093
+
         const store = mockStore<GlobalState, Action>(baseState);
 
-        // Missing `user` (and `user_id`, for good measure), to
-        // simulate #4156.
-        const faultyReaction = {
-          reaction_type: 'unicode_emoji',
-          emoji_code: '1f44d',
-          emoji_name: 'thumbs_up',
-        };
-
         const response = {
-          // Flow would complain at `faultyReaction` if it
+          // Flow would complain at `sender_email` if it
           // type-checked `response`, but we should ignore it if that
-          // day comes. It's badly shaped on purpose.
-          messages: [{ ...fetchedMessage1, reactions: [faultyReaction] }],
+          // day comes. It's badly typed on purpose.
+          messages: [{ ...fetchedMessage1, avatar_url: null, sender_email: undefined }],
           result: 'success',
         };
         // $FlowFixMe[prop-missing]: See mock in jest/globalFetch.js.
         fetch.mockResponseSuccess(JSON.stringify(response));
 
+        const expectedError = Error("Cannot read properties of undefined (reading 'toLowerCase')");
+
         await expect(
           store.dispatch(
             fetchMessages({ narrow: HOME_NARROW, anchor: 0, numBefore: 1, numAfter: 1 }),
           ),
-        ).rejects.toThrow(
-          // Update this with changes to the error type.
-          TypeError,
-        );
+        ).rejects.toThrow(expectedError);
 
         const actions = store.getActions();
 
         expect(actions[actions.length - 1]).toMatchObject({
           type: 'MESSAGE_FETCH_ERROR',
-          // Update this with changes to the error type.
-          error: expect.any(TypeError),
+          error: expectedError,
         });
       });
 
@@ -480,192 +464,6 @@ describe('fetchActions', () => {
       expect(action.type).toBe('MESSAGE_FETCH_START');
       invariant(action.type === 'MESSAGE_FETCH_START', 'expect failed');
       expect(action.numAfter).not.toBeGreaterThan(0);
-    });
-  });
-
-  describe('fetchOlder', () => {
-    const message1 = eg.streamMessage({ id: 1 });
-    const message2 = eg.streamMessage({ id: 2 });
-
-    const baseState = eg.reduxStatePlus({
-      narrows: eg.plusReduxState.narrows.merge(
-        Immutable.Map([
-          [streamNarrowStr, [message2.id]],
-          [HOME_NARROW_STR, [message1.id, message2.id]],
-        ]),
-      ),
-      messages: eg.makeMessagesState([message1, message2]),
-    });
-
-    beforeEach(() => {
-      // $FlowFixMe[prop-missing]: See mock in jest/globalFetch.js.
-      fetch.mockResponseSuccess(BORING_RESPONSE);
-    });
-
-    test('message fetch start action is dispatched with numBefore greater than zero', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        fetching: {
-          ...baseState.fetching,
-          [HOME_NARROW_STR]: {
-            older: false,
-            newer: false,
-          },
-        },
-      });
-
-      await store.dispatch(fetchOlder(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(1);
-      const [action] = actions;
-      expect(action.type).toBe('MESSAGE_FETCH_START');
-      invariant(action.type === 'MESSAGE_FETCH_START', 'expect failed');
-      expect(action.numBefore).toBeGreaterThan(0);
-    });
-
-    test('when caughtUp older is true, no action is dispatched', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        caughtUp: {
-          ...baseState.caughtUp,
-          [HOME_NARROW_STR]: {
-            older: true,
-            newer: true,
-          },
-        },
-      });
-
-      await store.dispatch(fetchOlder(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(0);
-    });
-
-    test('when fetchingOlder older is true, no action is dispatched', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        fetching: {
-          ...baseState.fetching,
-          [HOME_NARROW_STR]: {
-            older: true,
-            newer: true,
-          },
-        },
-      });
-
-      await store.dispatch(fetchOlder(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(0);
-    });
-
-    test('when loading is true, no action is dispatched', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        session: {
-          ...baseState.session,
-          loading: true,
-        },
-      });
-
-      await store.dispatch(fetchOlder(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(0);
-    });
-  });
-
-  describe('fetchNewer', () => {
-    const message1 = eg.streamMessage({ id: 1 });
-    const message2 = eg.streamMessage({ id: 2 });
-
-    const baseState = eg.reduxStatePlus({
-      narrows: eg.plusReduxState.narrows.merge(
-        Immutable.Map([
-          [streamNarrowStr, [message2.id]],
-          [HOME_NARROW_STR, [message1.id, message2.id]],
-        ]),
-      ),
-      messages: eg.makeMessagesState([message1, message2]),
-    });
-
-    beforeEach(() => {
-      // $FlowFixMe[prop-missing]: See mock in jest/globalFetch.js.
-      fetch.mockResponseSuccess(BORING_RESPONSE);
-    });
-
-    test('message fetch start action is dispatched with numAfter greater than zero', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        fetching: {
-          ...baseState.fetching,
-          [HOME_NARROW_STR]: {
-            older: false,
-            newer: false,
-          },
-        },
-      });
-
-      await store.dispatch(fetchNewer(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(1);
-      const [action] = actions;
-      expect(action.type).toBe('MESSAGE_FETCH_START');
-      invariant(action.type === 'MESSAGE_FETCH_START', 'expect failed');
-      expect(action.numAfter).toBeGreaterThan(0);
-    });
-
-    test('when caughtUp newer is true, no action is dispatched', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        caughtUp: {
-          ...baseState.caughtUp,
-          [HOME_NARROW_STR]: {
-            older: true,
-            newer: true,
-          },
-        },
-      });
-
-      await store.dispatch(fetchNewer(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(0);
-    });
-
-    test('when fetching.newer is true, no action is dispatched', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        fetching: {
-          ...baseState.fetching,
-          [HOME_NARROW_STR]: {
-            older: false,
-            newer: true,
-          },
-        },
-      });
-
-      await store.dispatch(fetchNewer(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(0);
-    });
-
-    test('when loading is true, no action is dispatched', async () => {
-      const store = mockStore<GlobalState, Action>({
-        ...baseState,
-        session: {
-          ...baseState.session,
-          loading: true,
-        },
-      });
-
-      await store.dispatch(fetchNewer(HOME_NARROW));
-      const actions = store.getActions();
-
-      expect(actions).toHaveLength(0);
     });
   });
 });

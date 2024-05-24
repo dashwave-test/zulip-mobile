@@ -4,11 +4,10 @@ import { createSelector } from 'reselect';
 import type { Narrow, Selector } from '../types';
 import type { UnreadStreamItem } from './UnreadCards';
 import { caseInsensitiveCompareFunc } from '../utils/misc';
-import { getMute, isTopicMuted } from '../mute/muteModel';
+import { getMute, isTopicVisibleInStream, isTopicVisible } from '../mute/muteModel';
 import { getOwnUserId } from '../users/userSelectors';
 import { getSubscriptionsById, getStreamsById } from '../subscriptions/subscriptionSelectors';
 import { caseNarrow } from '../utils/narrow';
-import { NULL_SUBSCRIPTION } from '../nullObjects';
 import {
   getUnread,
   getUnreadPms,
@@ -28,8 +27,9 @@ export const getUnreadByStream: Selector<{| [number]: number |}> = createSelecto
     for (const [streamId, streamData] of unreadStreams.entries()) {
       let total = 0;
       for (const [topic, msgIds] of streamData) {
-        const isMuted = isTopicMuted(streamId, topic, mute);
-        total += isMuted ? 0 : msgIds.size;
+        if (isTopicVisibleInStream(streamId, topic, mute)) {
+          total += msgIds.size;
+        }
       }
       totals[streamId] = total;
     }
@@ -125,62 +125,6 @@ export const getUnreadTotal: Selector<number> = createSelector(
     unreadStreamTotal + unreadPmsTotal + unreadHuddlesTotal + mentionsTotal,
 );
 
-/** Helper for getUnreadStreamsAndTopicsSansMuted; see there. */
-export const getUnreadStreamsAndTopics: Selector<$ReadOnlyArray<UnreadStreamItem>> = createSelector(
-  getSubscriptionsById,
-  getUnreadStreams,
-  getMute,
-  getUnreadMentions,
-  (subscriptionsById, unreadStreams, mute, unreadMentions) => {
-    const totals = new Map();
-    const unreadMsgIds = new Set(unreadMentions);
-    for (const [streamId, streamData] of unreadStreams.entries()) {
-      const { name, color, in_home_view, invite_only, pin_to_top, is_web_public } =
-        subscriptionsById.get(streamId) || NULL_SUBSCRIPTION;
-
-      const total = {
-        key: `stream:${streamId}`,
-        streamId,
-        streamName: name,
-        isMuted: !in_home_view,
-        isPrivate: invite_only,
-        isPinned: pin_to_top,
-        isWebPublic: is_web_public,
-        color,
-        unread: 0,
-        data: [],
-      };
-      totals.set(streamId, total);
-
-      for (const [topic, msgIds] of streamData) {
-        const isMuted = isTopicMuted(streamId, topic, mute);
-        if (!isMuted) {
-          total.unread += msgIds.size;
-        }
-        const isMentioned = msgIds.some(id => unreadMsgIds.has(id));
-        total.data.push({
-          key: topic,
-          topic,
-          unread: msgIds.size,
-          isMentioned,
-          lastUnreadMsgId: msgIds.last(),
-          isMuted,
-        });
-      }
-    }
-
-    const sortedStreams = Array.from(totals.values())
-      .sort((a, b) => caseInsensitiveCompareFunc(a.streamName, b.streamName))
-      .sort((a, b) => +b.isPinned - +a.isPinned);
-
-    sortedStreams.forEach(stream => {
-      stream.data.sort((a, b) => b.lastUnreadMsgId - a.lastUnreadMsgId);
-    });
-
-    return sortedStreams;
-  },
-);
-
 /**
  * Summary of unread unmuted stream messages, to feed to the unreads screen.
  *
@@ -191,15 +135,71 @@ export const getUnreadStreamsAndTopics: Selector<$ReadOnlyArray<UnreadStreamItem
  * contains in `.data` an array with an element for each unmuted topic that
  * has unreads.
  */
-export const getUnreadStreamsAndTopicsSansMuted: Selector<$ReadOnlyArray<UnreadStreamItem>> =
-  createSelector(getUnreadStreamsAndTopics, unreadStreamsAndTopics =>
-    unreadStreamsAndTopics
-      .map(stream => ({
-        ...stream,
-        data: stream.data.filter(topic => !topic.isMuted),
-      }))
-      .filter(stream => !stream.isMuted && stream.data.length > 0),
-  );
+export const getUnreadStreamsAndTopics: Selector<$ReadOnlyArray<UnreadStreamItem>> = createSelector(
+  getSubscriptionsById,
+  getUnreadStreams,
+  getMute,
+  getUnreadMentions,
+  (subscriptionsById, unreadStreams, mute, unreadMentions) => {
+    const result = [];
+    const unreadMsgIds = new Set(unreadMentions);
+    for (const [streamId, streamData] of unreadStreams.entries()) {
+      const subscription = subscriptionsById.get(streamId);
+      if (!subscription) {
+        // We have a loose invariant that you can't have unreads in a stream
+        // you're not subscribed to.  It's "loose" because when you unsubscribe
+        // from a stream you had unreads in, the server only asynchronously
+        // marks them as read:
+        //   https://chat.zulip.org/#narrow/stream/378-api-design/topic/unreads.20in.20unsubscribed.20streams/near/1456534
+        // In the UI, though, we generally want to fix things up so that
+        // it's as if the invariant were a real invariant.  So if we find
+        // some supposed "unreads" in a stream with no subscription,
+        // avert our eyes; those "unread" records don't count.
+        continue;
+      }
+
+      const { name, color, invite_only, pin_to_top, is_web_public } = subscription;
+
+      let totalUnread = 0;
+      const topics = [];
+      for (const [topic, msgIds] of streamData) {
+        if (!isTopicVisible(streamId, topic, subscription, mute)) {
+          continue;
+        }
+        totalUnread += msgIds.size;
+        const isMentioned = msgIds.some(id => unreadMsgIds.has(id));
+        topics.push({
+          key: topic,
+          topic,
+          unread: msgIds.size,
+          isMentioned,
+          lastUnreadMsgId: msgIds.last(),
+        });
+      }
+      if (topics.length === 0) {
+        continue;
+      }
+
+      topics.sort((a, b) => b.lastUnreadMsgId - a.lastUnreadMsgId);
+      result.push({
+        key: `stream:${streamId}`,
+        streamId,
+        streamName: name,
+        isPrivate: invite_only,
+        isPinned: pin_to_top,
+        isWebPublic: is_web_public,
+        color,
+        unread: totalUnread,
+        data: topics,
+      });
+    }
+
+    result.sort((a, b) => caseInsensitiveCompareFunc(a.streamName, b.streamName));
+    result.sort((a, b) => +b.isPinned - +a.isPinned);
+
+    return result;
+  },
+);
 
 /**
  * Total number of unreads in the given narrow... mostly.
@@ -224,7 +224,7 @@ export const getUnreadCountForNarrow: Selector<number, Narrow> = createSelector(
         unread.streams
           .get(streamId)
           ?.entrySeq()
-          .filterNot(([topic, _]) => isTopicMuted(streamId, topic, mute))
+          .filter(([topic, _]) => isTopicVisibleInStream(streamId, topic, mute))
           .map(([_, msgIds]) => msgIds.size)
           .reduce((s, x) => s + x, 0) ?? 0,
 

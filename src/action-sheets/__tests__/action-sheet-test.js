@@ -12,6 +12,7 @@ import {
 import { makeUnreadState } from '../../unread/__tests__/unread-testlib';
 import { makeMuteState } from '../../mute/__tests__/mute-testlib';
 import { Role } from '../../api/permissionsTypes';
+import { UserTopicVisibilityPolicy } from '../../api/modelTypes';
 
 const buttonTitles = buttons => buttons.map(button => button.title);
 
@@ -90,6 +91,26 @@ describe('constructTopicActionButtons', () => {
   test('show muteTopic', () => {
     const mute = makeMuteState([]);
     expect(titles({ ...eg.plusBackgroundData, mute })).toContain('Mute topic');
+  });
+
+  test('show muteTopic on followed topic', () => {
+    const mute = makeMuteState([[eg.stream, topic, UserTopicVisibilityPolicy.Followed]]);
+    expect(titles({ ...eg.plusBackgroundData, mute })).toContain('Mute topic');
+  });
+
+  test('show followTopic on muted topic', () => {
+    const mute = makeMuteState([[eg.stream, topic]]);
+    expect(titles({ ...eg.plusBackgroundData, mute })).toContain('Follow topic');
+  });
+
+  test('show followTopic', () => {
+    const mute = makeMuteState([]);
+    expect(titles({ ...eg.plusBackgroundData, mute })).toContain('Follow topic');
+  });
+
+  test('show unfollowTopic', () => {
+    const mute = makeMuteState([[eg.stream, topic, UserTopicVisibilityPolicy.Followed]]);
+    expect(titles({ ...eg.plusBackgroundData, mute })).toContain('Unfollow topic');
   });
 
   test('show resolveTopic', () => {

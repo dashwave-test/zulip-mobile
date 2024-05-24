@@ -218,7 +218,9 @@ export type OutboxState = $ReadOnlyArray<Outbox>;
  *   presence status.
  */
 export type PresenceState = $ReadOnly<{|
-  [email: string]: UserPresence,
+  pingIntervalSeconds: number,
+  offlineThresholdSeconds: number,
+  byEmail: Immutable.Map<string, UserPresence>,
 |}>;
 
 /**
@@ -300,6 +302,7 @@ export type RealmState = {|
   +messageContentDeleteLimitSeconds: number | null,
   +messageContentEditLimitSeconds: number,
   +pushNotificationsEnabled: boolean,
+  +pushNotificationsEnabledEndTimestamp: number | null,
   +createPublicStreamPolicy: CreatePublicOrPrivateStreamPolicyT,
   +createPrivateStreamPolicy: CreatePublicOrPrivateStreamPolicyT,
   +webPublicStreamsEnabled: boolean,
@@ -308,23 +311,14 @@ export type RealmState = {|
   +waitingPeriodThreshold: number,
   +allowEditHistory: boolean,
   +enableReadReceipts: boolean,
-  +emailAddressVisibility: EmailAddressVisibility,
+  +emailAddressVisibility: EmailAddressVisibility | null,
+  +enableGuestUserIndicator: boolean,
 
   //
   // InitialDataRealmUser
   //
 
   +canCreateStreams: boolean,
-
-  // Deprecated; these don't have events to update them. Use getOwnUserRole,
-  // which uses the self-user's live-updating `role` property when
-  // available.
-  // TODO(server-4.0): Remove these and rely on self-user's `role`.
-  -isAdmin: boolean,
-  -isOwner: boolean,
-  -isModerator: boolean,
-  -isGuest: boolean,
-
   +user_id: UserId | void,
   +email: string | void,
   +crossRealmBots: $ReadOnlyArray<CrossRealmBot>,

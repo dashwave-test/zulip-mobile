@@ -287,14 +287,6 @@ export type User = {|
   // FL 121. The doc wrongly says it always appears. See
   //   https://chat.zulip.org/#narrow/stream/412-api-documentation/topic/.60is_active.60.20in.20.60.2Fregister.60.20response/near/1371606
 
-  // Deprecated (by us); these don't have events to update them. Use the
-  // `role` property when available. For the self user, use getOwnUserRole,
-  // which has a fallback for when `role` is absent.
-  // TODO(server-4.0): Remove these and rely on `role`.
-  -is_owner?: boolean, // TODO(server-3.0): New in FL 8
-  -is_admin: boolean,
-  -is_guest?: boolean, // TODO(server-1.9): New; if absent, treat as false.
-
   // TODO(server-5.0): New in FL 73
   +is_billing_admin?: boolean,
 
@@ -311,8 +303,7 @@ export type User = {|
   // TODO(server-3.0): Replaced in FL 1 by bot_owner_id
   +bot_owner?: string,
 
-  // TODO(server-4.0): New in FL 59
-  +role?: Role,
+  +role: Role,
 
   // The ? is for future-proofing. Greg explains in 2020-02, at
   // https://github.com/zulip/zulip-mobile/pull/3789#discussion_r378554698 ,
@@ -373,13 +364,6 @@ export type CrossRealmBot = {|
   // FL 121. The doc wrongly says it always appears. See
   //   https://chat.zulip.org/#narrow/stream/412-api-documentation/topic/.60is_active.60.20in.20.60.2Fregister.60.20response/near/1371606
 
-  // Deprecated (by us); these don't have events to update them. Use the
-  // `role` property when available.
-  // TODO(server-4.0): Remove these and rely on `role`.
-  -is_owner?: boolean, // TODO(server-3.0): New in FL 8
-  -is_admin: boolean,
-  -is_guest?: boolean, // TODO(server-1.9): New; if absent, treat as false.
-
   // TODO(server-5.0): New in FL 73
   +is_billing_admin?: boolean,
 
@@ -399,8 +383,7 @@ export type CrossRealmBot = {|
   // TODO(server-3.0): Replaced in FL 1 by bot_owner_id
   // +bot_owner?: string,
 
-  // TODO(server-4.0): New in FL 59
-  +role?: Role,
+  +role: Role,
 
   // The ? is for future-proofing.  For bots it's always '':
   //   https://github.com/zulip/zulip-mobile/pull/3789#issuecomment-581218576
@@ -636,6 +619,34 @@ export type Topic = $ReadOnly<{|
 |}>;
 
 /**
+ * A user's policy for whether and how to see a particular topic.
+ *
+ * See `visibility_policy` at: https://zulip.com/api/get-events#user_topic
+ */
+export enum UserTopicVisibilityPolicy {
+  None = 0,
+  Muted = 1,
+  Unmuted = 2,
+  // Not in the API docs yet.  But it is, uh, in the server implementation:
+  //   https://github.com/zulip/zulip/blob/2ec8273c6/zerver/models.py#L2794-L2797
+  // TODO(server): delete this comment once documented
+  Followed = 3,
+}
+
+/**
+ * A user's relationship to a topic; in particular, muting.
+ *
+ * Found in the initial data at `user_topics`, and in `user_topic` events:
+ *   https://zulip.com/api/get-events#user_topic
+ */
+export type UserTopic = {|
+  +stream_id: number,
+  +topic_name: string,
+  +last_updated: number,
+  +visibility_policy: UserTopicVisibilityPolicy,
+|};
+
+/**
  * A muted topic.
  *
  * Found in the initial data, and in `muted_topics` events.
@@ -645,6 +656,7 @@ export type Topic = $ReadOnly<{|
 // Server issue for using stream IDs (#3918) for muted topics, not names:
 //   https://github.com/zulip/zulip/issues/21015
 // TODO(server-3.0): Simplify away the no-timestamp version, new in FL 1.
+// TODO(server-6.0): Remove, in favor of UserTopic.
 export type MutedTopicTuple = [string, string] | [string, string, number];
 
 //
@@ -669,8 +681,9 @@ export type NarrowElement =
  | {| +operator: 'stream', +operand: string | number |} // stream ID
  | {| +operator: 'pm-with', +operand: string | $ReadOnlyArray<UserId> |}
  | {| +operator: 'sender', +operand: string | UserId |}
- | {| +operator: 'group-pm-with', +operand: string | UserId |}
  | {| +operator: 'near' | 'id', +operand: number |} // message ID
+ // ('group-pm-with' was accepted at least through server 6.x, but support
+ // will be dropped: https://github.com/zulip/zulip/issues/24806 )
  ;
 
 /**
