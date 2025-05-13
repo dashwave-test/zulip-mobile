@@ -33,7 +33,7 @@ import { TranslationContext } from '../boot/TranslationProvider';
 import { draftUpdate, sendTypingStart, sendTypingStop } from '../actions';
 import Touchable from '../common/Touchable';
 import Input from '../common/Input';
-import { showErrorAlert } from '../utils/info';
+import { showErrorAlert, showConfirmationDialog } from '../utils/info';
 import { IconDone, IconSend } from '../common/Icons';
 import {
   isConversationNarrow,
@@ -170,6 +170,46 @@ ${rawContent}
 ${fence}`;
 }
 
+/**
+ * Extract file attachment URLs from message content
+ * 
+ * This function extracts file attachment URLs from message content
+ * and returns an array of objects with the URL and filename.
+ */
+function extractAttachmentUrls(content: string): Array<{| url: string, filename: string |}> {
+  const attachments = [];
+  // Match markdown links that point to user uploads
+  const regex = /\[([^\]]+)\]\(([^)]+\/user_uploads\/[^)]+)\)/g;
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    const filename = match[1];
+    const url = match[2];
+    attachments.push({ url, filename });
+  }
+  
+  return attachments;
+}
+
+/**
+ * Compare two messages to find removed attachments
+ * 
+ * This function compares the original message content with the edited
+ * message content to find attachments that were removed.
+ */
+function findRemovedAttachments(
+  originalContent: string,
+  editedContent: string,
+): Array<{| url: string, filename: string |}> {
+  const originalAttachments = extractAttachmentUrls(originalContent);
+  const editedAttachments = extractAttachmentUrls(editedContent);
+  
+  // Find attachments in original that are not in edited
+  return originalAttachments.filter(
+    original => !editedAttachments.some(edited => edited.url === original.url)
+  );
+}
+
 const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef((props, ref) => {
   const {
     narrow,
@@ -203,6 +243,7 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
   const inputBlurTimeoutId = useRef<?TimeoutID>(null);
 
   const [height, setHeight] = useState<number>(20);
+  const [originalMessageContent, setOriginalMessageContent] = useState<string>('');
 
   const [focusState, setFocusState] = useState<{|
     message: boolean,
@@ -234,6 +275,13 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
     setMessageInputSelection /* eslint-disable-line no-unused-vars */,
     messageInputCallbacks,
   ] = useUncontrolledInput({ value: initialMessage ?? '', selection: { start: 0, end: 0 } });
+
+  // Store the original message content when editing starts
+  useEffect(() => {
+    if (isEditing && initialMessage) {
+      setOriginalMessageContent(initialMessage);
+    }
+  }, [isEditing, initialMessage]);
 
   useEffect(
     () => () => {
@@ -385,8 +433,7 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
 
   const activeInvocations = useRef<number[]>([]);
   const [activeQuoteAndRepliesCount, setActiveQuoteAndRepliesCount] = useState(0);
-  const anyQuoteAndReplyInProgress = activeQuoteAndRepliesCount > 0;
-  const doQuoteAndReply = useCallback(
+  const anyQuoteAndReplyInProgress = activeQuoteAndRepliesCount > 0;const doQuoteAndReply = useCallback(
     async message => {
       // TODO: For composing a new message (i.e. isEditing is false), if
       //   not already there, re-narrow to `message`'s conversation narrow,
@@ -605,14 +652,71 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
       return;
     }
 
+    // When editing a message, check for removed attachments
+    if (isEditing && originalMessageContent) {
+      const removedAttachments = findRemovedAttachments(originalMessageContent, messageInputValue);
+      
+      if (removedAttachments.length > 0) {
+        // Ask user if they want to delete the removed attachments
+        showConfirmationDialog({
+          title: _('Delete attachments?'),
+          message: {
+            text: _('You have removed {count, plural, one {# file} other {# files}} from this message. Would you like to delete {count, plural, one {this file} other {these files}} from the server?', 
+              { count: removedAttachments.length }),
+            values: { count: removedAttachments.length },
+          },
+          onPressConfirm: async () => {
+            try {
+              // Get all attachments for the user
+              const attachmentsResponse = await api.getAttachments(auth);
+              
+              // For each removed attachment, find its ID and delete it
+              for (const removedAttachment of removedAttachments) {
+                // Extract the path_id from the URL
+                const urlParts = removedAttachment.url.split('/user_uploads/');
+                if (urlParts.length < 2) continue;
+                
+                const pathId = urlParts[1];
+                
+                // Find the attachment ID that matches this path_id
+                const attachment = attachmentsResponse.attachments.find(a => a.path_id === pathId);
+                if (attachment) {
+                  await api.deleteAttachment(auth, attachment.id);
+                }
+              }
+            } catch (error) {
+              showErrorAlert(_('Failed to delete attachments'), error.message);
+            }
+            
+            // Continue with sending the message regardless
+            onSend(messageInputValue, destinationNarrow);
+            setMessageInputValue('');
+            if (mentionWarnings.current) {
+              mentionWarnings.current.clearMentionWarnings();
+            }
+            dispatch(sendTypingStop(destinationNarrow));
+          },
+          onPressCancel: () => {
+            // Just send the message without deleting attachments
+            onSend(messageInputValue, destinationNarrow);
+            setMessageInputValue('');
+            if (mentionWarnings.current) {
+              mentionWarnings.current.clearMentionWarnings();
+            }
+            dispatch(sendTypingStop(destinationNarrow));
+          },
+          _,
+        });
+        return;
+      }
+    }
+
+    // No attachments removed or not editing, just send the message
     onSend(messageInputValue, destinationNarrow);
-
     setMessageInputValue('');
-
     if (mentionWarnings.current) {
       mentionWarnings.current.clearMentionWarnings();
     }
-
     dispatch(sendTypingStop(destinationNarrow));
   }, [
     destinationNarrow,
@@ -623,6 +727,8 @@ const ComposeBox: React$AbstractComponent<Props, ImperativeHandle> = forwardRef(
     onSend,
     setMessageInputValue,
     messageInputState,
+    originalMessageContent,
+    auth,
   ]);
 
   const inputMarginPadding = useMemo(
