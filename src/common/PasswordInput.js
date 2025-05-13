@@ -10,6 +10,9 @@ import ZulipTextIntl from './ZulipTextIntl';
 import Touchable from './Touchable';
 
 const styles = createStyleSheet({
+  container: {
+    position: 'relative',
+  },
   showPasswordButton: {
     position: 'absolute',
     right: 0,
@@ -20,6 +23,9 @@ const styles = createStyleSheet({
   showPasswordButtonText: {
     margin: 8,
     color: BRAND_COLOR,
+  },
+  input: {
+    paddingRight: 60, // Ensure text doesn't overlap with the Show/Hide button
   },
 });
 
@@ -44,8 +50,14 @@ export default function PasswordInput(props: Props): Node {
   }, []);
 
   return (
-    <View>
-      <Input {...props} secureTextEntry={isHidden} autoCorrect={false} autoCapitalize="none" />
+    <View style={styles.container}>
+      <Input 
+        {...props} 
+        style={[props.style, styles.input]} 
+        secureTextEntry={isHidden} 
+        autoCorrect={false} 
+        autoCapitalize="none" 
+      />
       <Touchable style={styles.showPasswordButton} onPress={handleShow}>
         <ZulipTextIntl style={styles.showPasswordButtonText} text={isHidden ? 'show' : 'hide'} />
       </Touchable>
